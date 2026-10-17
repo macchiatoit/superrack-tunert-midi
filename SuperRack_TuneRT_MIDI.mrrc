@@ -1,0 +1,575 @@
+<MultiRackRemoteControl>
+ <DisplayMTC>false</DisplayMTC>
+ <FollowProgramChange>false</FollowProgramChange>
+ <UseCCForScenesControl>false</UseCCForScenesControl>
+ <GenerateProgramChange>false</GenerateProgramChange>
+ <FollowMixer1>true</FollowMixer1>
+ <MIDITakeover>false</MIDITakeover>
+ <ScenesInputChannel>-1</ScenesInputChannel>
+ <FileVersion>1.0.0.0</FileVersion>
+ <MultiRackVersion>15.15.12.13 Build 288878</MultiRackVersion>
+ <Commands>
+  <NumberOfCommands>51</NumberOfCommands>
+  <Command>
+   <Name>Discrete Control #1</Name>
+   <RelativeMode>0</RelativeMode>
+   <MIDI>
+    <MessageType>Control Change</MessageType>
+    <Channel>0x00</Channel>
+    <Number>0x14</Number>
+    <Param>-2</Param>
+    <BigNumber>0x00</BigNumber>
+   </MIDI>
+  </Command>
+  <Command>
+   <Name>Continuous Control #1</Name>
+   <RelativeMode>0</RelativeMode>
+   <MIDI>
+    <MessageType>Control Change</MessageType>
+    <Channel>0x00</Channel>
+    <Number>0x15</Number>
+    <Param>-2</Param>
+    <BigNumber>0x00</BigNumber>
+   </MIDI>
+  </Command>
+  <Command>
+   <Name>Continuous Control #2</Name>
+   <RelativeMode>0</RelativeMode>
+   <MIDI>
+    <MessageType>Control Change</MessageType>
+    <Channel>0x00</Channel>
+    <Number>0x16</Number>
+    <Param>-2</Param>
+    <BigNumber>0x00</BigNumber>
+   </MIDI>
+  </Command>
+  <Command>
+   <Name>Continuous Control #3</Name>
+   <RelativeMode>0</RelativeMode>
+   <MIDI>
+    <MessageType>Control Change</MessageType>
+    <Channel>0x00</Channel>
+    <Number>0x17</Number>
+    <Param>-2</Param>
+    <BigNumber>0x00</BigNumber>
+   </MIDI>
+  </Command>
+  <Command>
+   <Name>Continuous Control #4</Name>
+   <RelativeMode>0</RelativeMode>
+   <MIDI>
+    <MessageType>Control Change</MessageType>
+    <Channel>0x00</Channel>
+    <Number>0x18</Number>
+    <Param>-2</Param>
+    <BigNumber>0x00</BigNumber>
+   </MIDI>
+  </Command>
+  <Command>
+   <Name>Continuous Control #5</Name>
+   <RelativeMode>0</RelativeMode>
+   <MIDI>
+    <MessageType>Control Change</MessageType>
+    <Channel>0x00</Channel>
+    <Number>0x19</Number>
+    <Param>-2</Param>
+    <BigNumber>0x00</BigNumber>
+   </MIDI>
+  </Command>
+  <Command>
+   <Name>Continuous Control #6</Name>
+   <RelativeMode>0</RelativeMode>
+   <MIDI>
+    <MessageType>Control Change</MessageType>
+    <Channel>0x00</Channel>
+    <Number>0x1A</Number>
+    <Param>-2</Param>
+    <BigNumber>0x00</BigNumber>
+   </MIDI>
+  </Command>
+  <Command>
+   <Name>Continuous Control #7</Name>
+   <RelativeMode>0</RelativeMode>
+   <MIDI>
+    <MessageType>Control Change</MessageType>
+    <Channel>0x00</Channel>
+    <Number>0x1B</Number>
+    <Param>-2</Param>
+    <BigNumber>0x00</BigNumber>
+   </MIDI>
+  </Command>
+  <Command>
+   <Name>Continuous Control #8</Name>
+   <RelativeMode>0</RelativeMode>
+   <MIDI>
+    <MessageType>Control Change</MessageType>
+    <Channel>0x00</Channel>
+    <Number>0x1C</Number>
+    <Param>-2</Param>
+    <BigNumber>0x00</BigNumber>
+   </MIDI>
+  </Command>
+  <Command>
+   <Name>Discrete Control #2</Name>
+   <RelativeMode>0</RelativeMode>
+   <MIDI>
+    <MessageType>Control Change</MessageType>
+    <Channel>0x00</Channel>
+    <Number>0x1D</Number>
+    <Param>-2</Param>
+    <BigNumber>0x00</BigNumber>
+   </MIDI>
+  </Command>
+  <Command>
+   <Name>Discrete Control #3</Name>
+   <RelativeMode>0</RelativeMode>
+   <MIDI>
+    <MessageType>Control Change</MessageType>
+    <Channel>0x00</Channel>
+    <Number>0x1E</Number>
+    <Param>-2</Param>
+    <BigNumber>0x00</BigNumber>
+   </MIDI>
+  </Command>
+  <Command>
+   <Name>Discrete Control #4</Name>
+   <RelativeMode>0</RelativeMode>
+   <MIDI>
+    <MessageType>Control Change</MessageType>
+    <Channel>0x00</Channel>
+    <Number>0x1F</Number>
+    <Param>-2</Param>
+    <BigNumber>0x00</BigNumber>
+   </MIDI>
+  </Command>
+  <Command>
+   <Name>Discrete Control #5</Name>
+   <RelativeMode>0</RelativeMode>
+   <MIDI>
+    <MessageType>Control Change</MessageType>
+    <Channel>0x00</Channel>
+    <Number>0x20</Number>
+    <Param>-2</Param>
+    <BigNumber>0x00</BigNumber>
+   </MIDI>
+  </Command>
+  <Command>
+   <Name>Discrete Control #6</Name>
+   <RelativeMode>0</RelativeMode>
+   <MIDI>
+    <MessageType>Control Change</MessageType>
+    <Channel>0x00</Channel>
+    <Number>0x21</Number>
+    <Param>-2</Param>
+    <BigNumber>0x00</BigNumber>
+   </MIDI>
+  </Command>
+  <Command>
+   <Name>Discrete Control #7</Name>
+   <RelativeMode>0</RelativeMode>
+   <MIDI>
+    <MessageType>Control Change</MessageType>
+    <Channel>0x00</Channel>
+    <Number>0x22</Number>
+    <Param>-2</Param>
+    <BigNumber>0x00</BigNumber>
+   </MIDI>
+  </Command>
+  <Command>
+   <Name>Discrete Control #8</Name>
+   <RelativeMode>0</RelativeMode>
+   <MIDI>
+    <MessageType>Control Change</MessageType>
+    <Channel>0x00</Channel>
+    <Number>0x23</Number>
+    <Param>-2</Param>
+    <BigNumber>0x00</BigNumber>
+   </MIDI>
+  </Command>
+  <Command>
+   <Name>Next Page Navigation</Name>
+   <RelativeMode>0</RelativeMode>
+   <MIDI>
+    <MessageType>Control Change</MessageType>
+    <Channel>0x00</Channel>
+    <Number>0x28</Number>
+    <Param>-2</Param>
+    <BigNumber>0x00</BigNumber>
+   </MIDI>
+  </Command>
+  <Command>
+   <Name>Previous Page Navigation</Name>
+   <RelativeMode>0</RelativeMode>
+   <MIDI>
+    <MessageType>Control Change</MessageType>
+    <Channel>0x00</Channel>
+    <Number>0x29</Number>
+    <Param>-2</Param>
+    <BigNumber>0x00</BigNumber>
+   </MIDI>
+  </Command>
+  <Command>
+   <Name>Previous Rack Navigation</Name>
+   <RelativeMode>0</RelativeMode>
+   <MIDI>
+    <MessageType>Control Change</MessageType>
+    <Channel>0x00</Channel>
+    <Number>0x2A</Number>
+    <Param>-2</Param>
+    <BigNumber>0x00</BigNumber>
+   </MIDI>
+  </Command>
+  <Command>
+   <Name>Next Rack Navigation</Name>
+   <RelativeMode>0</RelativeMode>
+   <MIDI>
+    <MessageType>Control Change</MessageType>
+    <Channel>0x00</Channel>
+    <Number>0x2B</Number>
+    <Param>-2</Param>
+    <BigNumber>0x00</BigNumber>
+   </MIDI>
+  </Command>
+  <Command>
+   <Name>Previous Plug-in Navigation</Name>
+   <RelativeMode>0</RelativeMode>
+   <MIDI>
+    <MessageType>Control Change</MessageType>
+    <Channel>0x00</Channel>
+    <Number>0x2C</Number>
+    <Param>-2</Param>
+    <BigNumber>0x00</BigNumber>
+   </MIDI>
+  </Command>
+  <Command>
+   <Name>Next Plug-in Navigation</Name>
+   <RelativeMode>0</RelativeMode>
+   <MIDI>
+    <MessageType>Control Change</MessageType>
+    <Channel>0x00</Channel>
+    <Number>0x2D</Number>
+    <Param>-2</Param>
+    <BigNumber>0x00</BigNumber>
+   </MIDI>
+  </Command>
+  <Command>
+   <Name>Open Rack Tab</Name>
+   <RelativeMode>0</RelativeMode>
+   <MIDI>
+    <MessageType>Control Change</MessageType>
+    <Channel>0x00</Channel>
+    <Number>0x2E</Number>
+    <Param>-2</Param>
+    <BigNumber>0x00</BigNumber>
+   </MIDI>
+  </Command>
+  <Command>
+   <Name>Recall Hot Plug-in #1</Name>
+   <RelativeMode>0</RelativeMode>
+   <MIDI>
+    <MessageType>Control Change</MessageType>
+    <Channel>0x00</Channel>
+    <Number>0x32</Number>
+    <Param>-2</Param>
+    <BigNumber>0x00</BigNumber>
+   </MIDI>
+  </Command>
+  <Command>
+   <Name>Recall Hot Plug-in #2</Name>
+   <RelativeMode>0</RelativeMode>
+   <MIDI>
+    <MessageType>Control Change</MessageType>
+    <Channel>0x00</Channel>
+    <Number>0x33</Number>
+    <Param>-2</Param>
+    <BigNumber>0x00</BigNumber>
+   </MIDI>
+  </Command>
+  <Command>
+   <Name>Recall Hot Plug-in #3</Name>
+   <RelativeMode>0</RelativeMode>
+   <MIDI>
+    <MessageType>Control Change</MessageType>
+    <Channel>0x00</Channel>
+    <Number>0x34</Number>
+    <Param>-2</Param>
+    <BigNumber>0x00</BigNumber>
+   </MIDI>
+  </Command>
+  <Command>
+   <Name>Recall Hot Plug-in #4</Name>
+   <RelativeMode>0</RelativeMode>
+   <MIDI>
+    <MessageType>Control Change</MessageType>
+    <Channel>0x00</Channel>
+    <Number>0x35</Number>
+    <Param>-2</Param>
+    <BigNumber>0x00</BigNumber>
+   </MIDI>
+  </Command>
+  <Command>
+   <Name>Recall Hot Plug-in #5</Name>
+   <RelativeMode>0</RelativeMode>
+   <MIDI>
+    <MessageType>Control Change</MessageType>
+    <Channel>0x00</Channel>
+    <Number>0x36</Number>
+    <Param>-2</Param>
+    <BigNumber>0x00</BigNumber>
+   </MIDI>
+  </Command>
+  <Command>
+   <Name>Recall Hot Plug-in #6</Name>
+   <RelativeMode>0</RelativeMode>
+   <MIDI>
+    <MessageType>Control Change</MessageType>
+    <Channel>0x00</Channel>
+    <Number>0x37</Number>
+    <Param>-2</Param>
+    <BigNumber>0x00</BigNumber>
+   </MIDI>
+  </Command>
+  <Command>
+   <Name>Recall Hot Plug-in #7</Name>
+   <RelativeMode>0</RelativeMode>
+   <MIDI>
+    <MessageType>Control Change</MessageType>
+    <Channel>0x00</Channel>
+    <Number>0x38</Number>
+    <Param>-2</Param>
+    <BigNumber>0x00</BigNumber>
+   </MIDI>
+  </Command>
+  <Command>
+   <Name>Recall Hot Plug-in #8</Name>
+   <RelativeMode>0</RelativeMode>
+   <MIDI>
+    <MessageType>Control Change</MessageType>
+    <Channel>0x00</Channel>
+    <Number>0x39</Number>
+    <Param>-2</Param>
+    <BigNumber>0x00</BigNumber>
+   </MIDI>
+  </Command>
+  <Command>
+   <Name>Recall Hot Plug-in #9</Name>
+   <RelativeMode>0</RelativeMode>
+   <MIDI>
+    <MessageType>Control Change</MessageType>
+    <Channel>0x00</Channel>
+    <Number>0x3A</Number>
+    <Param>-2</Param>
+    <BigNumber>0x00</BigNumber>
+   </MIDI>
+  </Command>
+  <Command>
+   <Name>Recall Hot Plug-in #10</Name>
+   <RelativeMode>0</RelativeMode>
+   <MIDI>
+    <MessageType>Control Change</MessageType>
+    <Channel>0x00</Channel>
+    <Number>0x3B</Number>
+    <Param>-2</Param>
+    <BigNumber>0x00</BigNumber>
+   </MIDI>
+  </Command>
+  <Command>
+   <Name>Recall Hot Plug-in #11</Name>
+   <RelativeMode>0</RelativeMode>
+   <MIDI>
+    <MessageType>Control Change</MessageType>
+    <Channel>0x00</Channel>
+    <Number>0x3C</Number>
+    <Param>-2</Param>
+    <BigNumber>0x00</BigNumber>
+   </MIDI>
+  </Command>
+  <Command>
+   <Name>Recall Hot Plug-in #12</Name>
+   <RelativeMode>0</RelativeMode>
+   <MIDI>
+    <MessageType>Control Change</MessageType>
+    <Channel>0x00</Channel>
+    <Number>0x3D</Number>
+    <Param>-2</Param>
+    <BigNumber>0x00</BigNumber>
+   </MIDI>
+  </Command>
+  <Command>
+   <Name>User Key #1</Name>
+   <RelativeMode>0</RelativeMode>
+   <MIDI>
+    <MessageType>Control Change</MessageType>
+    <Channel>0x00</Channel>
+    <Number>0x46</Number>
+    <Param>-2</Param>
+    <BigNumber>0x00</BigNumber>
+   </MIDI>
+  </Command>
+  <Command>
+   <Name>User Key #2</Name>
+   <RelativeMode>0</RelativeMode>
+   <MIDI>
+    <MessageType>Control Change</MessageType>
+    <Channel>0x00</Channel>
+    <Number>0x47</Number>
+    <Param>-2</Param>
+    <BigNumber>0x00</BigNumber>
+   </MIDI>
+  </Command>
+  <Command>
+   <Name>User Key #3</Name>
+   <RelativeMode>0</RelativeMode>
+   <MIDI>
+    <MessageType>Control Change</MessageType>
+    <Channel>0x00</Channel>
+    <Number>0x48</Number>
+    <Param>-2</Param>
+    <BigNumber>0x00</BigNumber>
+   </MIDI>
+  </Command>
+  <Command>
+   <Name>User Key #4</Name>
+   <RelativeMode>0</RelativeMode>
+   <MIDI>
+    <MessageType>Control Change</MessageType>
+    <Channel>0x00</Channel>
+    <Number>0x49</Number>
+    <Param>-2</Param>
+    <BigNumber>0x00</BigNumber>
+   </MIDI>
+  </Command>
+  <Command>
+   <Name>User Key #5</Name>
+   <RelativeMode>0</RelativeMode>
+   <MIDI>
+    <MessageType>Control Change</MessageType>
+    <Channel>0x00</Channel>
+    <Number>0x4A</Number>
+    <Param>-2</Param>
+    <BigNumber>0x00</BigNumber>
+   </MIDI>
+  </Command>
+  <Command>
+   <Name>User Key #6</Name>
+   <RelativeMode>0</RelativeMode>
+   <MIDI>
+    <MessageType>Control Change</MessageType>
+    <Channel>0x00</Channel>
+    <Number>0x4B</Number>
+    <Param>-2</Param>
+    <BigNumber>0x00</BigNumber>
+   </MIDI>
+  </Command>
+  <Command>
+   <Name>User Key #7</Name>
+   <RelativeMode>0</RelativeMode>
+   <MIDI>
+    <MessageType>Control Change</MessageType>
+    <Channel>0x00</Channel>
+    <Number>0x4C</Number>
+    <Param>-2</Param>
+    <BigNumber>0x00</BigNumber>
+   </MIDI>
+  </Command>
+  <Command>
+   <Name>User Key #8</Name>
+   <RelativeMode>0</RelativeMode>
+   <MIDI>
+    <MessageType>Control Change</MessageType>
+    <Channel>0x00</Channel>
+    <Number>0x4D</Number>
+    <Param>-2</Param>
+    <BigNumber>0x00</BigNumber>
+   </MIDI>
+  </Command>
+  <Command>
+   <Name>User Key #9</Name>
+   <RelativeMode>0</RelativeMode>
+   <MIDI>
+    <MessageType>Control Change</MessageType>
+    <Channel>0x00</Channel>
+    <Number>0x4E</Number>
+    <Param>-2</Param>
+    <BigNumber>0x00</BigNumber>
+   </MIDI>
+  </Command>
+  <Command>
+   <Name>User Key #10</Name>
+   <RelativeMode>0</RelativeMode>
+   <MIDI>
+    <MessageType>Control Change</MessageType>
+    <Channel>0x00</Channel>
+    <Number>0x4F</Number>
+    <Param>-2</Param>
+    <BigNumber>0x00</BigNumber>
+   </MIDI>
+  </Command>
+  <Command>
+   <Name>User Key #11</Name>
+   <RelativeMode>0</RelativeMode>
+   <MIDI>
+    <MessageType>Control Change</MessageType>
+    <Channel>0x00</Channel>
+    <Number>0x50</Number>
+    <Param>-2</Param>
+    <BigNumber>0x00</BigNumber>
+   </MIDI>
+  </Command>
+  <Command>
+   <Name>User Key #12</Name>
+   <RelativeMode>0</RelativeMode>
+   <MIDI>
+    <MessageType>Control Change</MessageType>
+    <Channel>0x00</Channel>
+    <Number>0x51</Number>
+    <Param>-2</Param>
+    <BigNumber>0x00</BigNumber>
+   </MIDI>
+  </Command>
+  <Command>
+   <Name>User Key #13</Name>
+   <RelativeMode>0</RelativeMode>
+   <MIDI>
+    <MessageType>Control Change</MessageType>
+    <Channel>0x00</Channel>
+    <Number>0x52</Number>
+    <Param>-2</Param>
+    <BigNumber>0x00</BigNumber>
+   </MIDI>
+  </Command>
+  <Command>
+   <Name>User Key #14</Name>
+   <RelativeMode>0</RelativeMode>
+   <MIDI>
+    <MessageType>Control Change</MessageType>
+    <Channel>0x00</Channel>
+    <Number>0x53</Number>
+    <Param>-2</Param>
+    <BigNumber>0x00</BigNumber>
+   </MIDI>
+  </Command>
+  <Command>
+   <Name>User Key #15</Name>
+   <RelativeMode>0</RelativeMode>
+   <MIDI>
+    <MessageType>Control Change</MessageType>
+    <Channel>0x00</Channel>
+    <Number>0x54</Number>
+    <Param>-2</Param>
+    <BigNumber>0x00</BigNumber>
+   </MIDI>
+  </Command>
+  <Command>
+   <Name>User Key #16</Name>
+   <RelativeMode>0</RelativeMode>
+   <MIDI>
+    <MessageType>Control Change</MessageType>
+    <Channel>0x00</Channel>
+    <Number>0x55</Number>
+    <Param>-2</Param>
+    <BigNumber>0x00</BigNumber>
+   </MIDI>
+  </Command>
+ </Commands>
+</MultiRackRemoteControl>
