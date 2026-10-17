@@ -444,6 +444,10 @@ G♯, F♯, G♭, E, G♭, E.
 Für Tune RT gibt es drei Seiten. NEXT/PREV PAGE springen nach der letzten wieder zur ersten.
 Nach jedem Rack- oder Plugin-Wechsel steht Seite 1 aktiv.
 
+**Rote Rahmen zeigen die aktive Seite:** Im Plugin-Fenster umrandet SuperRack die Regler rot, die die aktive Seite der
+Plugin Controls erreicht. So sieht man schnell, welche Seite aktiv ist. Nach einem Tonartwechsel ist Seite 2 aktiv,
+daher bekommt auch Reference (Hz) einen roten Rahmen (es ist dort Continuous 3), obwohl das Skript den Wert nie ändert.
+
 | Seite | Feld | Tune-RT-Parameter |
 |---|---|---|
 | 1 (Regler) | Continuous 1 | Correction (Stärke) |

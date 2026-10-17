@@ -439,6 +439,10 @@ G♯, F♯, G♭, E, G♭, E.
 Tune RT has three pages. NEXT/PREV PAGE wrap around after the last one.
 After every rack or plugin change, page 1 is active.
 
+**Red frames show the active page:** in the plugin window, SuperRack outlines in red the controls that the active
+Plugin Controls page reaches. That is a quick way to see which page is active. After a key change page 2 is active,
+so Reference (Hz) gets a red frame too (it is Continuous 3 on that page), although the script never changes it.
+
 | Page | Field | Tune RT parameter |
 |---|---|---|
 | 1 (Controls) | Continuous 1 | Correction (amount) |
