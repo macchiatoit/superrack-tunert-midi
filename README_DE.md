@@ -26,6 +26,7 @@ offline, die Parameter reagieren im Plugin aber trotzdem.
 - Ein bestimmtes Tune RT lässt sich absolut per **Hot Plugin** oder **User Key** wählen, ein Rack per Rack-Navigation.
 - Das Python-Skript [`tunert_midi.py`](tunert_midi.py) erledigt alles in einem Aufruf:
   `key D --scale harmonic-minor --hot-plugin 2 --send-to-all`.
+- Mit `listen` reagiert das Skript auf einen MIDI-Controller (Pads, Fussschalter, Program Change), gesteuert über ein YAML-Mapping.
 
 ## Einrichtung: MIDI Controller in SuperRack
 
@@ -37,6 +38,9 @@ Alle Beispiele und das Skript verwenden diese Belegung. Sie liegt als Datei bei:
 2. Das Zahnrad unter dem Modul öffnet das Fenster „MIDI Controller“.
 3. Unter **MIDI IN** den Port anhaken, über den die Befehle kommen. Für Befehle vom selben Mac eignet sich ein
    IAC-Bus, eingerichtet in „Audio-MIDI-Setup“ → MIDI-Studio → IAC-Treiber.
+
+   ![MIDI IN mit angehaktem IAC-Bus](images/midi-controller-general.png)
+
 4. FILE → **IMPORT** → `SuperRack_TuneRT_MIDI.mrrc` wählen.
 5. Fenster schliessen (siehe Hinweis zum Lernmodus unten).
 
@@ -219,6 +223,10 @@ Bei mehreren Tune-RT-Instanzen muss vorher die richtige gewählt sein. Dafür gi
 
 Hot Plugin und User Key wählen ein **bestimmtes Plugin** absolut, die Rack-Navigation nur das Rack.
 
+**Vorsicht bei der Rack-Wahl:** SuperRack merkt sich pro Rack das gewählte Plugin, nach einem Neustart ist das
+Slot 1. Steht dort ein anderes Plugin (z. B. Vocal Rider vor Tune RT), bewegen die Plugin Controls dessen
+Parameter. Für den Live-Einsatz sind Hot Plugins oder User Keys die sichere Wahl.
+
 **Warum vorher PREV RACK + NEXT RACK?** Die Plugin Controls springen nur bei einem echten Rack- oder
 Plugin-Wechsel auf Seite 1. Ist das Ziel-Plugin schon gewählt, bleibt die Seite stehen, und NEXT PAGE landet
 auf der falschen Seite. Das Hin und Her erzwingt einen Wechsel, auch am Rand: Bei Rack 1 bewegt sich PREV nicht,
@@ -247,7 +255,7 @@ verschoben, Wechsel zwischen zwei Instanzen, Start bei Rack 1.
 
 ## Das Skript `tunert_midi.py`
 
-Benötigt Python 3 und die Pakete aus [`requirements.txt`](requirements.txt) (`mido`, `python-rtmidi`):
+Benötigt Python 3 und die Pakete aus [`requirements.txt`](requirements.txt) (`mido`, `python-rtmidi`, `PyYAML`):
 
 ```bash
 python3 -m venv .venv
@@ -255,15 +263,16 @@ python3 -m venv .venv
 .venv/bin/python tunert_midi.py ports
 ```
 
-`ports` listet die MIDI-Ausgänge. Ohne `--port` nimmt das Skript den ersten Ausgang, der „IAC“ oder „SuperRack“
-im Namen hat. Mit `--port <Teil des Namens>` lässt sich ein anderer wählen.
+`ports` listet die MIDI-Ausgänge und -Eingänge. Ohne `--port` nimmt das Skript den Ausgang mit „IAC“ im Namen.
+`--port` und `--input` nehmen den vollen Namen oder einen Teil davon, solange er genau einen Port trifft. Sonst bricht
+das Skript ab und listet die Kandidaten auf, statt zu raten (z. B. trifft „Launchpad“ drei Launchpad-Pro-Ports).
 
 Tonart setzen:
 
 ```bash
 .venv/bin/python tunert_midi.py key D --scale harmonic-minor
 .venv/bin/python tunert_midi.py key Es --scale dorian --hot-plugin 2 --send-to-all
-.venv/bin/python tunert_midi.py key Fis --scale-value 41 --rack 18
+.venv/bin/python tunert_midi.py key Fis --scale-value 41 --user-key 1
 ```
 
 | Option | Bedeutung |
@@ -279,8 +288,98 @@ Tonart setzen:
 Ohne `--hot-plugin`, `--user-key` oder `--rack` geht das Skript davon aus, dass Tune RT schon gewählt ist und
 Seite 2 aktiv ist.
 
-Weitere Befehle: `send` (einzelner CC), `learn` (CC wiederholt senden zum Anlernen), `sweep` (CC-Werte
-durchmessen und Ergebnis als CSV speichern), `snapshot` (SuperRack-Snapshot per Program Change abrufen).
+Weitere Befehle: `send` (einzelner CC), `learn` (einen CC nach kurzer Wartezeit senden, zum Anlernen), `sweep`
+(CC-Werte durchmessen und Ergebnis als CSV speichern), `snapshot` (SuperRack-Snapshot per Program Change abrufen).
+
+`snapshot` funktioniert nur, wenn im MIDI-Controller-Fenster **Follow Prg. Changes on Channel** gesetzt ist (auf den
+Kanal, auf dem das Skript sendet, Standard 1). In `SuperRack_TuneRT_MIDI.mrrc` ist das aus, damit Program Changes nicht
+versehentlich Snapshots abrufen.
+
+### Auf einen MIDI-Controller reagieren (`listen`)
+
+`listen` wartet auf eingehende MIDI-Nachrichten, etwa ein Pad auf einem Launchpad, einen Fussschalter oder einen
+Program Change aus einer Setlist, und führt die dafür in einer YAML-Datei festgelegten Aktionen aus.
+Ein vollständiges Beispiel mit Kommentaren: [`mapping.example.yaml`](mapping.example.yaml).
+
+**1. Herausfinden, was der Controller sendet:**
+
+```bash
+.venv/bin/python tunert_midi.py monitor --input "Launchpad Pro Standalone"
+```
+
+Jede Nachricht erscheint im Trigger-Format zum Kopieren, z. B. `{type: note_on, channel: 1, note: 71}`.
+
+**2. Mapping schreiben:**
+
+```yaml
+input: Launchpad Pro Standalone   # MIDI-Eingang (Teil des Portnamens)
+output: IAC                       # Ausgang zu SuperRack (Standard: erster IAC-/SuperRack-Port)
+channel: 1                        # Kanal der SuperRack-Belegung (Standard: 1)
+
+defaults:                         # gilt für jede key-Aktion
+  hot_plugin: 1
+  send_to_all: true
+
+mappings:
+  - name: Song 1 - D minor
+    trigger: {type: note_on, channel: 1, note: 71}
+    key: D
+    scale: natural-minor
+
+  - name: Two instances in different keys
+    trigger: {type: note_on, channel: 1, note: 74}
+    actions:
+      - {key: G, hot_plugin: 1, send_to_all: false}
+      - {key: E, scale: natural-minor, hot_plugin: 2, send_to_all: false}
+```
+
+**3. Prüfen und starten:**
+
+```bash
+.venv/bin/python tunert_midi.py listen mein-mapping.yaml --check
+.venv/bin/python tunert_midi.py listen mein-mapping.yaml
+```
+
+| Trigger-Feld | Bedeutung |
+|---|---|
+| `type` | `note_on`, `note_off`, `control_change` oder `program_change` |
+| `channel` | 1–16; weglassen = jeder Kanal |
+| `note` / `control` / `program` | Zahl 0–127 oder Bereich wie `[60, 72]` |
+| `velocity` (Noten) / `value` (CC) | optional, Zahl oder Bereich, z. B. `value: [64, 127]` für „Fader in der oberen Hälfte“ |
+
+Ein `note_on` mit Velocity 0 zählt als `note_off`. Das Loslassen eines Pads löst also kein `note_on`-Mapping aus.
+
+| Aktion | Beispiel | Bedeutung |
+|---|---|---|
+| key | `{key: D, scale: dorian, user_key: 2, send_to_all: true}` | wie der Befehl `key`; alle seine Optionen, mit `_` statt `-` |
+| cc | `{cc: 20, value: 127, channel: 1}` | einen einzelnen CC an SuperRack senden |
+| snapshot | `{snapshot: 3}` | SuperRack-Snapshot per Program Change abrufen (braucht **Follow Prg. Changes**, siehe oben) |
+| wait | `{wait: 0.5}` | Pause in Sekunden |
+
+Ein Mapping enthält entweder direkt eine Aktion (Kurzform, wie „Song 1“) oder eine Liste unter `actions:`.
+Ein Ziel in der Aktion (`hot_plugin`, `user_key`, `rack`) ersetzt das Ziel aus `defaults`.
+Können mehrere Trigger auf dieselbe Nachricht passen (z. B. `note: [60, 72]` und `note: 65`), gewinnt das erste
+Mapping; `--check` warnt vor solchen Überschneidungen.
+
+| Option | Bedeutung |
+|---|---|
+| `--check` | nur die Datei prüfen und alle Mappings auflisten, keine Ports öffnen |
+| `--dry-run` | lauschen, aber nur anzeigen, was gesendet würde |
+| `--verbose` | auch Nachrichten ohne Mapping anzeigen |
+| `--input`, `--port`, `--channel` | überschreiben `input`, `output`, `channel` aus der Datei |
+
+Fehler in der Datei werden mit Mapping-Nummer und Name gemeldet, z. B.
+`mapping 2 (Song 2), action 1: unknown scale 'dorain'`. Auch Typen werden geprüft: `send_to_all: "false"` (Text statt
+`false`) oder `rack: "18"` werden abgelehnt. Beim Beenden von `listen` (Ctrl+C, `kill`, Terminal schliessen) wird
+eine laufende Aktion immer zu Ende geführt, es bleibt also keine halb gesendete Folge zurück. Weitere Aktionen
+dieses Triggers werden übersprungen, und ein laufendes `wait` endet sofort.
+
+**Schleifen vermeiden:** Kommen die Trigger über denselben Port, auf dem SuperRack lauscht (z. B. derselbe IAC-Bus),
+landen sie auch bei SuperRack, und die vom Skript gesendeten CCs kommen wieder herein. `listen` warnt davor.
+Besser einen eigenen Eingang nutzen (wie den Launchpad) oder zumindest einen anderen Kanal als die SuperRack-Belegung.
+
+Getestet mit einem Launchpad Pro (Note-Modus, oberste Reihe = Noten 71–74) und SuperRack: Jeder Pad-Druck löste das
+richtige Mapping aus, nicht belegte Pads und Aftertouch wurden ignoriert.
 
 ## Messdaten
 

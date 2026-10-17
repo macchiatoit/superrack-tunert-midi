@@ -26,6 +26,7 @@ during testing, but the plugin parameters still respond.
 - A specific Tune RT can be selected absolutely via **Hot Plugin** or **User Key**, a rack via rack navigation.
 - The Python script [`tunert_midi.py`](tunert_midi.py) does everything in one call:
   `key D --scale harmonic-minor --hot-plugin 2 --send-to-all`.
+- With `listen`, the script reacts to a MIDI controller (pads, footswitch, Program Change) based on a YAML mapping.
 
 ## Setup: MIDI Controller in SuperRack
 
@@ -37,6 +38,9 @@ All examples and the script use this mapping. It is included as a file:
 2. The gear icon below the module opens the "MIDI Controller" window.
 3. Under **MIDI IN**, tick the port the commands come in on. For commands from the same Mac, an IAC bus works well;
    set it up in "Audio MIDI Setup" → MIDI Studio → IAC Driver.
+
+   ![MIDI IN with the IAC bus ticked](images/midi-controller-general.png)
+
 4. FILE → **IMPORT** → select `SuperRack_TuneRT_MIDI.mrrc`.
 5. Close the window (see the note on learn mode below).
 
@@ -222,6 +226,10 @@ With several Tune RT instances, the right one has to be selected first. There ar
 
 Hot Plugin and User Key select a **specific plugin** absolutely; rack navigation only selects the rack.
 
+**Caution with rack selection:** SuperRack remembers the selected plugin per rack. After a restart this is
+slot 1. If another plugin sits there (e.g. Vocal Rider before Tune RT), the Plugin Controls then move **that**
+plugin's parameters. For live use, Hot Plugins or User Keys are the safe choice.
+
 **Why PREV RACK + NEXT RACK first?** The Plugin Controls only jump to page 1 on an actual rack or
 plugin change. If the target plugin is already selected, the page stays where it is, and NEXT PAGE ends up
 on the wrong page. Going back and forth forces a change, even at the edges: at rack 1, PREV does not move but
@@ -250,7 +258,7 @@ switching between two instances, starting at rack 1.
 
 ## The script `tunert_midi.py`
 
-Requires Python 3 and the packages from [`requirements.txt`](requirements.txt) (`mido`, `python-rtmidi`):
+Requires Python 3 and the packages from [`requirements.txt`](requirements.txt) (`mido`, `python-rtmidi`, `PyYAML`):
 
 ```bash
 python3 -m venv .venv
@@ -258,15 +266,16 @@ python3 -m venv .venv
 .venv/bin/python tunert_midi.py ports
 ```
 
-`ports` lists the MIDI outputs. Without `--port`, the script uses the first output with "IAC" or "SuperRack"
-in its name. Use `--port <part of the name>` to choose another one.
+`ports` lists the MIDI outputs and inputs. Without `--port`, the script uses the output with "IAC" in its name.
+`--port` and `--input` accept the full name or a part of it, as long as it matches exactly one port; otherwise the
+script stops and lists the candidates instead of guessing (e.g. "Launchpad" matches three Launchpad Pro ports).
 
 Setting a key:
 
 ```bash
 .venv/bin/python tunert_midi.py key D --scale harmonic-minor
 .venv/bin/python tunert_midi.py key Eb --scale dorian --hot-plugin 2 --send-to-all
-.venv/bin/python tunert_midi.py key Gb --scale-value 41 --rack 18
+.venv/bin/python tunert_midi.py key Gb --scale-value 41 --user-key 1
 ```
 
 | Option | Meaning |
@@ -281,8 +290,98 @@ Setting a key:
 
 Without `--hot-plugin`, `--user-key` or `--rack`, the script assumes Tune RT is already selected and page 2 is active.
 
-Further commands: `send` (single CC), `learn` (send a CC repeatedly for MIDI learn), `sweep` (step through CC
-values and save the result as CSV), `snapshot` (recall a SuperRack snapshot via Program Change).
+Further commands: `send` (single CC), `learn` (send one CC after a short delay, for MIDI learn), `sweep` (step
+through CC values and save the result as CSV), `snapshot` (recall a SuperRack snapshot via Program Change).
+
+`snapshot` only works if **Follow Prg. Changes on Channel** is set in the MIDI Controller window (to the channel the
+script sends on, default 1). It is off in `SuperRack_TuneRT_MIDI.mrrc`, so Program Changes cannot recall snapshots
+by accident.
+
+### Reacting to a MIDI controller (`listen`)
+
+`listen` waits for incoming MIDI messages, e.g. a pad on a Launchpad, a footswitch or a Program Change from a
+setlist, and runs the actions defined for it in a YAML file. A complete example with comments:
+[`mapping.example.yaml`](mapping.example.yaml).
+
+**1. Find out what the controller sends:**
+
+```bash
+.venv/bin/python tunert_midi.py monitor --input "Launchpad Pro Standalone"
+```
+
+Every message is printed in trigger format, ready to copy, e.g. `{type: note_on, channel: 1, note: 71}`.
+
+**2. Write the mapping:**
+
+```yaml
+input: Launchpad Pro Standalone   # MIDI input (part of the port name)
+output: IAC                       # output to SuperRack (default: first IAC/SuperRack port)
+channel: 1                        # channel of the SuperRack mapping (default: 1)
+
+defaults:                         # applies to every key action
+  hot_plugin: 1
+  send_to_all: true
+
+mappings:
+  - name: Song 1 - D minor
+    trigger: {type: note_on, channel: 1, note: 71}
+    key: D
+    scale: natural-minor
+
+  - name: Two instances in different keys
+    trigger: {type: note_on, channel: 1, note: 74}
+    actions:
+      - {key: G, hot_plugin: 1, send_to_all: false}
+      - {key: E, scale: natural-minor, hot_plugin: 2, send_to_all: false}
+```
+
+**3. Check and start:**
+
+```bash
+.venv/bin/python tunert_midi.py listen my-mapping.yaml --check
+.venv/bin/python tunert_midi.py listen my-mapping.yaml
+```
+
+| Trigger field | Meaning |
+|---|---|
+| `type` | `note_on`, `note_off`, `control_change` or `program_change` |
+| `channel` | 1–16; leave out to accept any channel |
+| `note` / `control` / `program` | number 0–127, or a range like `[60, 72]` |
+| `velocity` (notes) / `value` (CC) | optional, number or range, e.g. `value: [64, 127]` for "fader in the upper half" |
+
+A `note_on` with velocity 0 counts as `note_off`, so releasing a pad does not trigger a `note_on` mapping.
+
+| Action | Example | Meaning |
+|---|---|---|
+| key | `{key: D, scale: dorian, user_key: 2, send_to_all: true}` | like the `key` command; every option of it with `_` instead of `-` |
+| cc | `{cc: 20, value: 127, channel: 1}` | send a single CC to SuperRack |
+| snapshot | `{snapshot: 3}` | recall a SuperRack snapshot via Program Change (needs **Follow Prg. Changes**, see above) |
+| wait | `{wait: 0.5}` | pause in seconds |
+
+A mapping holds either one action directly (short form, as in "Song 1") or a list under `actions:`.
+A target in the action (`hot_plugin`, `user_key`, `rack`) replaces the target from `defaults`.
+If several triggers can match the same message (e.g. `note: [60, 72]` and `note: 65`), the first mapping wins;
+`--check` warns about such overlaps.
+
+| Option | Meaning |
+|---|---|
+| `--check` | only validate the file and list all mappings, open no ports |
+| `--dry-run` | listen, but only print what would be sent |
+| `--verbose` | also print messages without a mapping |
+| `--input`, `--port`, `--channel` | override `input`, `output`, `channel` from the file |
+
+Errors in the file are reported with mapping number and name, e.g.
+`mapping 2 (Song 2), action 1: unknown scale 'dorain'`. Types are checked too: `send_to_all: "false"` (text instead
+of `false`) or `rack: "18"` are rejected. When stopping `listen` (Ctrl+C, `kill`, closing the terminal), the action
+that is running is always finished, so no half-sent sequence is left behind. Remaining actions of that trigger are
+skipped, and a running `wait` ends at once.
+
+**Avoid loops:** if triggers come in on the same port that SuperRack listens to (e.g. the same IAC bus), they also
+reach SuperRack, and the CCs sent by the script come back in. `listen` warns about this. Use a separate input (like
+the Launchpad) or at least another channel than the SuperRack mapping.
+
+Tested with a Launchpad Pro (Note mode, top row = notes 71–74) and SuperRack: every pad press ran the right
+mapping, unmapped pads and aftertouch were ignored.
 
 ## Measurements
 

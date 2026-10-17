@@ -1,0 +1,61 @@
+# Example mapping for: python tunert_midi.py listen mapping.example.yaml
+#
+# Find out what your controller sends with:
+#   python tunert_midi.py monitor --input "<part of the input name>"
+# and copy the printed lines as "trigger:".
+
+# MIDI input the triggers come from (part of the port name, see "tunert_midi.py ports").
+# A Launchpad Pro in Note mode sends the top row as notes 71-78 on channel 1.
+input: Launchpad Pro Standalone
+
+# Output to SuperRack (full name or a part that matches exactly one port). Default: the IAC port.
+output: IAC
+
+# MIDI channel of the SuperRack MIDI Controller mapping (SuperRack_TuneRT_MIDI.mrrc uses channel 1).
+channel: 1
+
+# Defaults for every "key" action. Any option of the "key" command, with underscores:
+# scale, scale_value, rack, hot_plugin, user_key, send_to_all, pause, ... and the *_cc options.
+defaults:
+  hot_plugin: 1
+  send_to_all: true
+
+mappings:
+  # Short form: one key action directly in the mapping.
+  - name: Song 1 - D minor
+    trigger: {type: note_on, channel: 1, note: 71}
+    key: D
+    scale: natural-minor
+
+  - name: Song 2 - E major
+    trigger: {type: note_on, channel: 1, note: 72}
+    key: E
+
+  - name: Song 3 - Bb dorian, only Hot Plugin 2, no Send to All
+    trigger: {type: note_on, channel: 1, note: 73}
+    key: Bb
+    scale: dorian
+    hot_plugin: 2
+    send_to_all: false
+
+  # Long form: several actions in a row.
+  - name: Two instances in different keys
+    trigger: {type: note_on, channel: 1, note: 74}
+    actions:
+      - {key: G, scale: major, hot_plugin: 1, send_to_all: false}
+      - {key: E, scale: natural-minor, hot_plugin: 2, send_to_all: false}
+
+  # Program Change from a setlist / DAW (program numbers as sent on the wire, 0-127).
+  - name: Program 5 - F# harmonic minor
+    trigger: {type: program_change, channel: 16, program: 5}
+    key: F#
+    scale: harmonic-minor
+
+  # Control Change with a value range, e.g. a fader: only react to values 64-127.
+  - name: CC 80 high
+    trigger: {type: control_change, channel: 16, control: 80, value: [64, 127]}
+    actions:
+      - {cc: 20, value: 127}   # raw CC to SuperRack (here: Discrete 1)
+      - {wait: 0.5}
+      - {snapshot: 3}          # SuperRack snapshot 3 via Program Change; needs "Follow Prg. Changes"
+                               # on channel 1 in the MIDI Controller window (off in the .mrrc)
