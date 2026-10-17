@@ -186,6 +186,11 @@ Gilt für alle Skalen ausser User Scale.
 | A♯ / B♭ | 18, 108 | `A#`, `Ais`, `Bb` |
 | B (H) | 18 | `B`, `H`, `Ces`, `Cb` |
 
+Gross- und Kleinschreibung ist egal. Deutsche Notennamen (`Cis`, `Es`, `H` …) funktionieren; `B` ist immer das
+englische B (= H), für B♭ also `Bb` oder `Ais`.
+In manchen Shells (z. B. zsh mit `extendedglob`) muss `#` in Anführungszeichen stehen: `"F#"`. Schreibweisen wie `Gb`
+oder `Fis` umgehen das.
+
 Tune RT zeigt manche Grundtöne enharmonisch verwechselt an (z. B. G♭ statt F♯). Die Tonhöhe ist dieselbe.
 
 ### Send to All
@@ -219,7 +224,7 @@ Bei mehreren Tune-RT-Instanzen muss vorher die richtige gewählt sein. Dafür gi
 |---|---|---|
 | Hot Plugin N (1–12) | das Plugin auf Hot Plugin N | PREV RACK, NEXT RACK, Hot Plugin N, NEXT PAGE |
 | User Key N (1–16) | was User Key N auslöst | PREV RACK, NEXT RACK, User Key N, NEXT PAGE |
-| Rack N | Rack N, mit dem dort zuletzt gewählten Plugin | PREV RACK × 64, NEXT RACK × N, PREV RACK, NEXT PAGE |
+| Rack N | Rack N, mit dem dort zuletzt gewählten Plugin | PREV RACK × 64, NEXT RACK × (N−1), NEXT PAGE; für Rack 1: PREV RACK × 64, NEXT RACK, PREV RACK, NEXT PAGE |
 
 Hot Plugin und User Key wählen ein **bestimmtes Plugin** absolut, die Rack-Navigation nur das Rack.
 
@@ -230,7 +235,9 @@ Parameter. Für den Live-Einsatz sind Hot Plugins oder User Keys die sichere Wah
 **Warum vorher PREV RACK + NEXT RACK?** Die Plugin Controls springen nur bei einem echten Rack- oder
 Plugin-Wechsel auf Seite 1. Ist das Ziel-Plugin schon gewählt, bleibt die Seite stehen, und NEXT PAGE landet
 auf der falschen Seite. Das Hin und Her erzwingt einen Wechsel, auch am Rand: Bei Rack 1 bewegt sich PREV nicht,
-NEXT aber schon. Beim letzten Rack ist es umgekehrt. Aus diesem Grund endet die Rack-Wahl mit NEXT × N und PREV × 1.
+NEXT aber schon. Beim letzten Rack ist es umgekehrt. Die Rack-Wahl führt immer zuerst über Rack 1, dadurch gibt es
+ohnehin einen Wechsel. Nur wenn Rack 1 selbst das Ziel ist, erzwingt NEXT + PREV ihn. NEXT RACK bleibt beim letzten Rack
+stehen, Rack N muss in der Session also existieren; Werte über `--max-racks` (64) lehnt das Skript ab.
 
 Gemessen:
 - Hot Plugins und User Keys wählen ihr Plugin auch beim zweiten Druck. Sie schalten nichts zurück, und es geht kein Zusatzfenster auf.
@@ -266,6 +273,7 @@ python3 -m venv .venv
 `ports` listet die MIDI-Ausgänge und -Eingänge. Ohne `--port` nimmt das Skript den Ausgang mit „IAC“ im Namen.
 `--port` und `--input` nehmen den vollen Namen oder einen Teil davon, solange er genau einen Port trifft. Sonst bricht
 das Skript ab und listet die Kandidaten auf, statt zu raten (z. B. trifft „Launchpad“ drei Launchpad-Pro-Ports).
+Haben zwei Geräte genau denselben Portnamen, bricht das Skript ebenfalls ab, weil sie nicht zu unterscheiden sind.
 
 Tonart setzen:
 
@@ -288,7 +296,7 @@ Tonart setzen:
 Ohne `--hot-plugin`, `--user-key` oder `--rack` geht das Skript davon aus, dass Tune RT schon gewählt ist und
 Seite 2 aktiv ist.
 
-Weitere Befehle: `send` (einzelner CC), `learn` (einen CC nach kurzer Wartezeit senden, zum Anlernen), `sweep`
+Weitere Befehle (alle brauchen `--cc`, z. B. `--cc 27`): `send` (einzelner CC), `learn` (einen CC nach kurzer Wartezeit senden, zum Anlernen), `sweep`
 (CC-Werte durchmessen und Ergebnis als CSV speichern), `snapshot` (SuperRack-Snapshot per Program Change abrufen).
 
 `snapshot` funktioniert nur, wenn im MIDI-Controller-Fenster **Follow Prg. Changes on Channel** gesetzt ist (auf den
@@ -365,7 +373,7 @@ Mapping; `--check` warnt vor solchen Überschneidungen.
 |---|---|
 | `--check` | nur die Datei prüfen und alle Mappings auflisten, keine Ports öffnen |
 | `--dry-run` | lauschen, aber nur anzeigen, was gesendet würde |
-| `--verbose` | auch Nachrichten ohne Mapping anzeigen |
+| `--verbose` | auch Nachrichten ohne Mapping anzeigen (ohne MIDI-Clock und Active Sensing) |
 | `--input`, `--port`, `--channel` | überschreiben `input`, `output`, `channel` aus der Datei |
 
 Fehler in der Datei werden mit Mapping-Nummer und Name gemeldet, z. B.
@@ -375,8 +383,21 @@ eine laufende Aktion immer zu Ende geführt, es bleibt also keine halb gesendete
 dieses Triggers werden übersprungen, und ein laufendes `wait` endet sofort.
 
 **Schleifen vermeiden:** Kommen die Trigger über denselben Port, auf dem SuperRack lauscht (z. B. derselbe IAC-Bus),
-landen sie auch bei SuperRack, und die vom Skript gesendeten CCs kommen wieder herein. `listen` warnt davor.
-Besser einen eigenen Eingang nutzen (wie den Launchpad) oder zumindest einen anderen Kanal als die SuperRack-Belegung.
+landen sie auch bei SuperRack, und die vom Skript gesendeten CCs kommen wieder herein. `listen` lehnt dann Trigger ab,
+die auf eine vom Skript gesendete Nachricht passen (gleicher Kanal und gleiche CC- bzw. Program-Nummer), weil sie sich
+sonst immer wieder selbst auslösen könnten. Besser einen eigenen Eingang nutzen (wie den Launchpad) oder einen anderen Kanal als die
+SuperRack-Belegung.
+
+**Abgesteckter Controller:** `listen` prüft zweimal pro Sekunde, ob sein Eingang noch da ist, und bemerkt so auch ein
+schnelles Aus- und Einstecken. Verschwindet das Gerät, meldet es das, wartet und macht weiter, sobald das Gerät wieder
+da ist. Der Ausgang zu SuperRack wird beim Start geöffnet (lässt er sich nicht öffnen, bricht `listen` sofort ab) und
+vor jedem Trigger neu geöffnet. Fehlt er (z. B. eine abgerissene Netzwerk-MIDI-Session), wird der Trigger übersprungen
+und gemeldet.
+
+Wird dasselbe Pad erneut gedrückt, während seine Aktion noch läuft, wird das ignoriert (das Ergebnis wäre gleich, nur
+später). Andere Trigger, die in der Zwischenzeit kommen, werden danach der Reihe nach ausgeführt.
+
+`--dry-run` braucht den SuperRack-Ausgang nicht, Mappings lassen sich also nur mit angeschlossenem Controller ausprobieren.
 
 Getestet mit einem Launchpad Pro (Note-Modus, oberste Reihe = Noten 71–74) und SuperRack: Jeder Pad-Druck löste das
 richtige Mapping aus, nicht belegte Pads und Aftertouch wurden ignoriert.

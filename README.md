@@ -222,7 +222,7 @@ With several Tune RT instances, the right one has to be selected first. There ar
 |---|---|---|
 | Hot Plugin N (1–12) | the plugin on Hot Plugin N | PREV RACK, NEXT RACK, Hot Plugin N, NEXT PAGE |
 | User Key N (1–16) | whatever User Key N triggers | PREV RACK, NEXT RACK, User Key N, NEXT PAGE |
-| Rack N | rack N, with the plugin last selected there | PREV RACK × 64, NEXT RACK × N, PREV RACK, NEXT PAGE |
+| Rack N | rack N, with the plugin last selected there | PREV RACK × 64, NEXT RACK × (N−1), NEXT PAGE; for rack 1: PREV RACK × 64, NEXT RACK, PREV RACK, NEXT PAGE |
 
 Hot Plugin and User Key select a **specific plugin** absolutely; rack navigation only selects the rack.
 
@@ -233,7 +233,9 @@ plugin's parameters. For live use, Hot Plugins or User Keys are the safe choice.
 **Why PREV RACK + NEXT RACK first?** The Plugin Controls only jump to page 1 on an actual rack or
 plugin change. If the target plugin is already selected, the page stays where it is, and NEXT PAGE ends up
 on the wrong page. Going back and forth forces a change, even at the edges: at rack 1, PREV does not move but
-NEXT does; at the last rack it is the other way round. For the same reason, rack selection ends with NEXT × N and PREV × 1.
+NEXT does; at the last rack it is the other way round. Rack selection always passes through rack 1 first, so a change
+happens anyway, except when rack 1 itself is the target: then NEXT + PREV forces it. NEXT RACK stops at the last rack,
+so N must exist in the session; the script rejects N above `--max-racks` (64).
 
 Measured:
 - Hot Plugins and User Keys select their plugin on a second press as well. They do not toggle back and open no extra window.
@@ -269,6 +271,7 @@ python3 -m venv .venv
 `ports` lists the MIDI outputs and inputs. Without `--port`, the script uses the output with "IAC" in its name.
 `--port` and `--input` accept the full name or a part of it, as long as it matches exactly one port; otherwise the
 script stops and lists the candidates instead of guessing (e.g. "Launchpad" matches three Launchpad Pro ports).
+If two devices have exactly the same port name, the script stops as well, because they cannot be told apart.
 
 Setting a key:
 
@@ -290,7 +293,7 @@ Setting a key:
 
 Without `--hot-plugin`, `--user-key` or `--rack`, the script assumes Tune RT is already selected and page 2 is active.
 
-Further commands: `send` (single CC), `learn` (send one CC after a short delay, for MIDI learn), `sweep` (step
+Further commands (all need `--cc`, e.g. `--cc 27`): `send` (single CC), `learn` (send one CC after a short delay, for MIDI learn), `sweep` (step
 through CC values and save the result as CSV), `snapshot` (recall a SuperRack snapshot via Program Change).
 
 `snapshot` only works if **Follow Prg. Changes on Channel** is set in the MIDI Controller window (to the channel the
@@ -367,7 +370,7 @@ If several triggers can match the same message (e.g. `note: [60, 72]` and `note:
 |---|---|
 | `--check` | only validate the file and list all mappings, open no ports |
 | `--dry-run` | listen, but only print what would be sent |
-| `--verbose` | also print messages without a mapping |
+| `--verbose` | also print messages without a mapping (MIDI clock and active sensing left out) |
 | `--input`, `--port`, `--channel` | override `input`, `output`, `channel` from the file |
 
 Errors in the file are reported with mapping number and name, e.g.
@@ -377,8 +380,19 @@ that is running is always finished, so no half-sent sequence is left behind. Rem
 skipped, and a running `wait` ends at once.
 
 **Avoid loops:** if triggers come in on the same port that SuperRack listens to (e.g. the same IAC bus), they also
-reach SuperRack, and the CCs sent by the script come back in. `listen` warns about this. Use a separate input (like
-the Launchpad) or at least another channel than the SuperRack mapping.
+reach SuperRack, and the CCs sent by the script come back in. `listen` then refuses triggers that match a message the
+script sends (same channel and same CC or program number), because they could fire themselves again and again. Use a separate
+input (like the Launchpad) or another channel than the SuperRack mapping.
+
+**Unplugged controller:** `listen` checks twice a second that its input still exists, so even a quick replug is noticed.
+If the device disappears, it says so, waits and continues as soon as the device is back. The output to SuperRack is
+opened at start (a port that cannot be opened stops `listen` right away) and reopened before every trigger. If it is
+missing (e.g. a dropped network MIDI session), the trigger is skipped with a message.
+
+Pressing the same pad again while its action is still running is ignored (the result would be the same, just later).
+Other triggers that arrive meanwhile are executed afterwards, in order.
+
+`--dry-run` does not need the SuperRack output, so mappings can be tried with just the controller connected.
 
 Tested with a Launchpad Pro (Note mode, top row = notes 71–74) and SuperRack: every pad press ran the right
 mapping, unmapped pads and aftertouch were ignored.

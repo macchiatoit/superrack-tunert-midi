@@ -78,6 +78,9 @@ def pick_port(wanted, kind="output"):
         sys.exit(f"No MIDI {kind} matches '{wanted}'. Choose one with {option}. Available: {names}")
     if len(matches) > 1:
         sys.exit(f"'{wanted}' matches several MIDI {kind}s: {matches}. Use a more specific {option}.")
+    if port_names(kind).count(matches[0]) > 1:
+        sys.exit(f"Several MIDI {kind}s are called '{matches[0]}' (e.g. two identical devices). They cannot be told "
+                 f"apart; rename one in Audio MIDI Setup or connect only one.")
     return matches[0]
 
 
@@ -116,7 +119,10 @@ def cmd_learn(args):
     with open_port(args) as out:
         if args.delay:
             print(f"Select the field in the SuperRack MIDI Controller window now; sending in {args.delay:g}s ...")
-            time.sleep(args.delay)
+            try:
+                time.sleep(args.delay)
+            except KeyboardInterrupt:
+                sys.exit("\nAborted, nothing sent.")
         send_cc(out, args, args.value)
         print(f"Sent CC {args.cc} = {args.value}. Close the MIDI Controller window when all fields are assigned.")
 
@@ -237,7 +243,9 @@ def resolve_key(root_text, opts):
         if not isinstance(opts["scale"], str) or opts["scale"] not in SCALE_TYPES:
             raise ValueError(f"unknown scale '{opts['scale']}'")
         scale_value, scale_name = SCALE_TYPES[opts["scale"]]
-    for name, hi in (("rack", 1024), ("hot_plugin", 12), ("user_key", 16)):
+    check_int(opts["max_racks"], 1, 1024, "max_racks")
+    # NEXT RACK stops at the last rack, so a rack beyond max_racks could only end up on a different rack.
+    for name, hi in (("rack", opts["max_racks"]), ("hot_plugin", 12), ("user_key", 16)):
         if opts[name] is not None:
             check_int(opts[name], 1, hi, name)
     targets = [k for k in ("rack", "hot_plugin", "user_key") if opts[k] is not None]
@@ -247,7 +255,6 @@ def resolve_key(root_text, opts):
         raise ValueError(f"send_to_all must be true or false, got {opts['send_to_all']!r}")
     check_number(opts["pause"], 0, 10, "pause")
     check_number(opts["nav_pause"], 0, 10, "nav_pause")
-    check_int(opts["max_racks"], 1, 1024, "max_racks")
     for name in ("root_cc", "type_cc", "send_cc", "next_page_cc", "prev_page_cc", "prev_rack_cc", "next_rack_cc"):
         check_int(opts[name], 0, 127, name)
     check_int(opts["hot_plugin_cc"], 0, 127 - 11, "hot_plugin_cc")  # Hot Plugins 1-12 follow
@@ -273,11 +280,15 @@ def run_key(out, channel, root_text, opts):
     # Select the target plugin. The Plugin Controls only jump to page 1 on an actual rack or plugin
     # change, so at least one rack change is always forced.
     if opts["rack"]:
-        # PREV RACK stops at rack 1; from there NEXT RACK counts every rack individually.
-        # NEXT x N and PREV x 1 instead of NEXT x (N-1), so that rack 1 -> rack 1 still causes a change.
+        # PREV RACK stops at rack 1; from there NEXT RACK counts every rack individually and stops at the last one.
+        # NEXT x (N-1) never overshoots, so it also works for the last rack. Only rack 1 needs an extra NEXT + PREV:
+        # if we already were in rack 1, PREV x max_racks did not change the rack and the page would not reset.
         press(opts["prev_rack_cc"], opts["max_racks"], opts["nav_pause"])
-        press(opts["next_rack_cc"], opts["rack"], opts["nav_pause"])
-        press(opts["prev_rack_cc"])
+        if opts["rack"] == 1:
+            press(opts["next_rack_cc"])
+            press(opts["prev_rack_cc"])
+        else:
+            press(opts["next_rack_cc"], opts["rack"] - 1, opts["nav_pause"])
     elif opts["hot_plugin"] or opts["user_key"]:
         press(opts["prev_rack_cc"])
         press(opts["next_rack_cc"])
@@ -465,6 +476,9 @@ def load_mapping(path):
         if "scale" in defaults and "scale_value" in defaults:
             raise ValueError("defaults: use either scale or scale_value, not both")
         channel = check_int(data.get("channel", 1), 1, 16, "channel")
+        for key in ("input", "output"):
+            if data.get(key) is not None and (not isinstance(data[key], str) or not data[key].strip()):
+                raise ValueError(f"{key} must be a port name (text), got {data[key]!r}")
         raw_mappings = data.get("mappings") or []
         if not isinstance(raw_mappings, list):
             raise ValueError("mappings must be a list (each entry starts with '- ')")
@@ -547,7 +561,12 @@ def stop_requested():
     running action finish: a half-sent sequence would leave Tune RT or the Plugin Controls page in an unknown state.
     """
     stop = threading.Event()
-    previous = {sig: signal.signal(sig, lambda *_: stop.set()) for sig in STOP_SIGNALS}
+    previous = {}
+    for sig in STOP_SIGNALS:
+        # Keep an inherited "ignore" for SIGHUP: nohup and service managers use it to survive a closed terminal.
+        if sig != signal.SIGINT and signal.getsignal(sig) == signal.SIG_IGN:
+            continue
+        previous[sig] = signal.signal(sig, lambda *_: stop.set())
     try:
         yield stop
     finally:
@@ -555,15 +574,174 @@ def stop_requested():
             signal.signal(sig, handler)
 
 
+# A USB replug (unplug + re-enumeration) takes longer than this, so it cannot slip between two checks.
+PORT_CHECK_SECONDS = 0.5
+_port_probes = {}
+
+
+def port_names(kind):
+    """Names of the MIDI ports present right now, as mido sees them.
+
+    With mido's default rtmidi backend this uses one long-lived rtmidi client per direction: mido.get_*_names()
+    would create and tear down a new MIDI client on every call, which adds up when listen checks its ports every
+    few seconds for hours. Any other backend (MIDO_BACKEND) is asked through mido itself, so names always match.
+    """
+    if mido.backend.name == "mido.backends.rtmidi" and mido.backend.api is None:
+        if kind not in _port_probes:
+            import rtmidi
+            _port_probes[kind] = rtmidi.MidiIn() if kind == "input" else rtmidi.MidiOut()
+        return _port_probes[kind].get_ports()
+    return mido.get_input_names() if kind == "input" else mido.get_output_names()
+
+
+def port_exists(name, kind):
+    return name in port_names(kind)
+
+
+# System realtime messages (clock, transport, active sensing): never triggers, and far too many to print.
+REALTIME_TYPES = ("clock", "active_sensing", "start", "stop", "continue", "songpos", "reset")
+
+
+def log(text):
+    print(f"{datetime.now():%H:%M:%S}  {text}")
+
+
 def incoming(port_name, stop):
-    """Yield incoming messages until stop is set. Blocks without polling; checks the flag twice a second."""
+    """Yield incoming messages until stop is set.
+
+    Blocks without polling. Twice a second it checks the stop flag and that the input still exists; if the device was
+    unplugged it says so once, waits for it to come back and reopens it.
+    """
     messages = queue.Queue()
-    with mido.open_input(port_name, callback=messages.put):
-        while not stop.is_set():
-            try:
-                yield messages.get(timeout=0.5)
-            except queue.Empty:
-                continue
+    open_failed = False
+
+    def received(msg):
+        # Stamp the arrival time: listen uses it to recognise presses that came in while an action was running.
+        messages.put(msg.copy(time=time.monotonic()))
+
+    while not stop.is_set():
+        if not port_exists(port_name, "input"):
+            log(f"Input '{port_name}' disappeared. Waiting for it to come back ...")
+            while not stop.is_set() and not port_exists(port_name, "input"):
+                stop.wait(1)
+            if stop.is_set():
+                break
+            log(f"Input '{port_name}' is back.")
+        try:
+            port = mido.open_input(port_name, callback=received)
+        except Exception as e:  # listed again, but not ready yet (e.g. a slowly enumerating USB device)
+            if not open_failed:
+                log(f"Input '{port_name}' cannot be opened yet ({e}); retrying every second ...")
+                open_failed = True
+            stop.wait(1)
+            continue
+        open_failed = False
+        with port:
+            last_check = time.monotonic()
+            count = port_names("input").count(port_name)
+            while not stop.is_set():
+                try:
+                    yield messages.get(timeout=0.5)
+                except queue.Empty:
+                    pass
+                if time.monotonic() - last_check >= PORT_CHECK_SECONDS:
+                    last_check = time.monotonic()
+                    present = port_names("input").count(port_name)
+                    if present > count:
+                        log(f"Warning: another input called '{port_name}' appeared. Both look the same, so this one "
+                            "may no longer be the device you mean.")
+                    elif 0 < present < count:
+                        # One of several same-named ports is gone, maybe the one that is open: reopen by name.
+                        log(f"One of the inputs called '{port_name}' disappeared; reopening.")
+                        break
+                    count = present
+                    if not present:
+                        break
+
+
+class ReconnectingOutput:
+    """Output port that survives a disappearing destination (e.g. a dropped network MIDI session).
+
+    The port is reopened before every trigger. A destination that vanished and came back between two triggers gets a
+    new identity in CoreMIDI, so an old handle could silently send into nothing.
+    """
+
+    def __init__(self, name):
+        self.name = name
+        self.port = mido.open_output(name)  # open once at start, so a port that cannot be opened fails before the show
+        self.lost = False
+
+    def ready(self):
+        """Call before each trigger. False (and a message once) while the port is missing or cannot be opened."""
+        if self.port:
+            self.port.close()
+            self.port = None
+        if not port_exists(self.name, "output"):
+            if not self.lost:
+                log(f"Output '{self.name}' disappeared. Triggers are skipped until it is back.")
+                self.lost = True
+            return False
+        try:
+            self.port = mido.open_output(self.name)
+        except Exception as e:
+            if not self.lost:
+                log(f"Output '{self.name}' cannot be opened ({e}). Triggers are skipped until it works again.")
+                self.lost = True
+            return False
+        if self.lost:
+            log(f"Output '{self.name}' is back.")
+            self.lost = False
+        return True
+
+    def send(self, msg):
+        self.port.send(msg)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        if self.port:
+            self.port.close()
+
+
+def check_no_feedback(mapping, channel, port_name):
+    """Input and output are the same port: the messages sent here come straight back in. Refuse triggers that could
+    match them, otherwise a mapping could trigger itself again and again."""
+    sent = set()  # (message type, channel 0-15, CC or program number, value or None) the actions can send
+    for m in mapping["mappings"]:
+        for a in m["actions"]:
+            if a["do"] == "key":
+                o = a["opts"]
+                ch = channel - 1
+                root, scale_value, _ = resolve_key(a["root"], o)
+                sent |= {("control_change", ch, o["type_cc"], v) for v in (SCALE_CHROMATIC, scale_value)}
+                sent |= {("control_change", ch, o["root_cc"], v) for v in ROOT_RECIPES[root]}
+                buttons = {o[k] for k in ("send_cc", "next_page_cc", "prev_page_cc", "prev_rack_cc", "next_rack_cc")}
+                if o["hot_plugin"]:
+                    buttons.add(o["hot_plugin_cc"] + o["hot_plugin"] - 1)
+                if o["user_key"]:
+                    buttons.add(o["user_key_cc"] + o["user_key"] - 1)
+                sent |= {("control_change", ch, c, 127) for c in buttons}
+            elif a["do"] == "cc":
+                sent.add(("control_change", (a["channel"] or channel) - 1, a["cc"], a["value"]))
+            elif a["do"] == "snapshot":
+                ch = (a["channel"] or channel) - 1
+                bank, program = divmod(a["number"] - 1, 128)
+                sent |= {("control_change", ch, 32, bank), ("program_change", ch, program, None)}
+
+    def could_loop(trig):
+        number_field, value_field = TRIGGER_NUMBER[trig["type"]], TRIGGER_VALUE.get(trig["type"])
+        lo, hi = trig[number_field]
+        vlo, vhi = trig.get(value_field, (0, 127)) if value_field else (0, 127)
+        return any(kind == trig["type"] and trig.get("channel", ch) == ch and lo <= n <= hi
+                   and (value is None or vlo <= value <= vhi) for kind, ch, n, value in sent)
+
+    loops = [m["name"] for m in mapping["mappings"] if could_loop(m["trigger"])]
+    if loops:
+        sys.exit(f"Input and output are both '{port_name}', so the messages sent here come back in.\n"
+                 f"These triggers match messages the script sends and could fire themselves again and again: "
+                 f"{', '.join(loops)}.\nUse a separate input, or a channel/number the script does not send.")
+    print(f"Note: input and output are both '{port_name}'. Triggers also reach SuperRack.")
 
 
 def cmd_listen(args):
@@ -579,19 +757,31 @@ def cmd_listen(args):
         return
 
     in_name = pick_port(args.input or mapping["input"], "input")
-    out_name = pick_port(args.port or mapping["output"])
+    out_name = None if args.dry_run else pick_port(args.port or mapping["output"])
     if in_name == out_name:
-        print(f"Warning: input and output are both '{in_name}'. Triggers also reach SuperRack, and the CCs sent "
-              "here come back in. Keep the triggers on another channel than the SuperRack mapping.")
-    print(f"Listening on '{in_name}', sending to '{out_name}' (SuperRack channel {channel}). Ctrl+C stops.")
-    with stop_requested() as stop, mido.open_output(out_name) as out:
+        check_no_feedback(mapping, channel, in_name)
+    try:
+        output = contextlib.nullcontext() if args.dry_run else ReconnectingOutput(out_name)
+    except Exception as e:
+        sys.exit(f"Cannot open output '{out_name}': {e}")
+    target = "nothing (dry run)" if args.dry_run else f"'{out_name}' (SuperRack channel {channel})"
+    print(f"Listening on '{in_name}', sending to {target}. Ctrl+C stops.")
+    last_match, busy_until = None, 0.0
+    with stop_requested() as stop, output as out:
         for msg in incoming(in_name, stop):
             match = next((m for m in mapping["mappings"] if trigger_matches(m["trigger"], msg)), None)
             if not match:
-                if args.verbose:
-                    print(f"{datetime.now():%H:%M:%S}  (no mapping) {msg}")
+                if args.verbose and msg.type not in REALTIME_TYPES:
+                    log(f"(no mapping) {msg.copy(time=0)}")
                 continue
-            print(f"{datetime.now():%H:%M:%S}  {match['name']}")
+            if match is last_match and msg.time < busy_until:
+                # Pressed again while its own action was still running: the result would be the same, only later.
+                log(f"{match['name']}: repeated press during the running action, ignored")
+                continue
+            log(match["name"])
+            if out and not out.ready():
+                print(f"    skipped: output '{out_name}' is missing")
+                continue
             for action in match["actions"]:
                 if stop.is_set():
                     print("    stop requested, remaining actions skipped")
@@ -603,6 +793,7 @@ def cmd_listen(args):
                     print(f"    {run_action(out, action, channel, stop)}")
                 except Exception as e:  # keep listening even if one action fails
                     print(f"    failed: {e}")
+            last_match, busy_until = match, time.monotonic()
     print("Stopped.")
 
 
@@ -612,7 +803,7 @@ def cmd_monitor(args):
     print(f"Listening on '{in_name}'. Copy a line into the mapping file as 'trigger:'. Ctrl+C stops.")
     with stop_requested() as stop:
         for msg in incoming(in_name, stop):
-            if msg.type in ("clock", "active_sensing", "start", "stop", "continue", "songpos"):
+            if msg.type in REALTIME_TYPES:
                 continue
             ch = getattr(msg, "channel", None)
             if msg.type in ("note_on", "note_off"):
@@ -623,7 +814,7 @@ def cmd_monitor(args):
             elif msg.type == "program_change":
                 print(f"{{type: program_change, channel: {ch + 1}, program: {msg.program}}}")
             else:
-                print(f"# {msg}   (not usable as trigger)")
+                print(f"# {msg.copy(time=0)}   (not usable as trigger)")
     print("Stopped.")
 
 
@@ -702,12 +893,9 @@ def int_range(lo, hi):
     """argparse type for a whole number within lo..hi with a short error message."""
     def parse(text):
         try:
-            value = int(text)
+            return check_int(int(text), lo, hi, "value")
         except ValueError:
             raise argparse.ArgumentTypeError(f"must be a whole number {lo}-{hi}, got '{text}'") from None
-        if not lo <= value <= hi:
-            raise argparse.ArgumentTypeError(f"must be {lo}-{hi}, got {value}")
-        return value
     return parse
 
 
@@ -718,8 +906,8 @@ def main():
     outp.add_argument("--channel", type=int_range(1, 16), default=1, metavar="1-16",
                       help="MIDI channel of the SuperRack mapping (default: 1)")
     ccp = argparse.ArgumentParser(add_help=False)
-    ccp.add_argument("--cc", type=int_range(0, 127), default=20, metavar="0-127",
-                     help="CC number (default: 20)")
+    ccp.add_argument("--cc", type=int_range(0, 127), required=True, metavar="0-127",
+                     help="CC number (required, so no mapped button is hit by accident)")
 
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("ports", help="list MIDI outputs and inputs").set_defaults(func=cmd_ports)
