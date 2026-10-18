@@ -1,0 +1,91 @@
+# Mapping for a Yamaha ARIUS digital piano: one octave per scale, the key you press is the root.
+#   python tunert_midi.py listen mapping.arius.yaml
+#
+# Octave numbers follow Yamaha: middle C = C3 = MIDI note 60, so C0 = note 24 (the lowest C on an 88-key piano).
+# Check with "python tunert_midi.py monitor --input ARIUS": middle C must print note: 60.
+#
+#   C0-B0 (24-35)  Chromatic (all 12 keys set Chromatic; the root has no effect there)
+#   C1-B1 (36-47)  Major
+#   C2-B2 (48-59)  Natural Minor
+#   C3-B3 (60-71)  Harmonic Minor
+#   C4-B4 (72-83)  Melodic Minor (Ascending)
+#   all other keys: not mapped
+
+input: ARIUS
+output: IAC-Treiber SuperRack SoundGrid
+channel: 1
+
+defaults:
+  hot_plugin: 1
+  send_to_all: true
+
+mappings:
+  # C0-B0 (notes 24-35): Chromatic
+  - {name: "C0 - Chromatic", trigger: {type: note_on, note: 24}, key: C, scale: chromatic}
+  - {name: "C#0 - Chromatic", trigger: {type: note_on, note: 25}, key: C#, scale: chromatic}
+  - {name: "D0 - Chromatic", trigger: {type: note_on, note: 26}, key: D, scale: chromatic}
+  - {name: "Eb0 - Chromatic", trigger: {type: note_on, note: 27}, key: Eb, scale: chromatic}
+  - {name: "E0 - Chromatic", trigger: {type: note_on, note: 28}, key: E, scale: chromatic}
+  - {name: "F0 - Chromatic", trigger: {type: note_on, note: 29}, key: F, scale: chromatic}
+  - {name: "F#0 - Chromatic", trigger: {type: note_on, note: 30}, key: F#, scale: chromatic}
+  - {name: "G0 - Chromatic", trigger: {type: note_on, note: 31}, key: G, scale: chromatic}
+  - {name: "Ab0 - Chromatic", trigger: {type: note_on, note: 32}, key: Ab, scale: chromatic}
+  - {name: "A0 - Chromatic", trigger: {type: note_on, note: 33}, key: A, scale: chromatic}
+  - {name: "Bb0 - Chromatic", trigger: {type: note_on, note: 34}, key: Bb, scale: chromatic}
+  - {name: "B0 - Chromatic", trigger: {type: note_on, note: 35}, key: B, scale: chromatic}
+
+  # C1-B1 (notes 36-47): Major
+  - {name: "C1 - C Major", trigger: {type: note_on, note: 36}, key: C, scale: major}
+  - {name: "C#1 - C# Major", trigger: {type: note_on, note: 37}, key: C#, scale: major}
+  - {name: "D1 - D Major", trigger: {type: note_on, note: 38}, key: D, scale: major}
+  - {name: "Eb1 - Eb Major", trigger: {type: note_on, note: 39}, key: Eb, scale: major}
+  - {name: "E1 - E Major", trigger: {type: note_on, note: 40}, key: E, scale: major}
+  - {name: "F1 - F Major", trigger: {type: note_on, note: 41}, key: F, scale: major}
+  - {name: "F#1 - F# Major", trigger: {type: note_on, note: 42}, key: F#, scale: major}
+  - {name: "G1 - G Major", trigger: {type: note_on, note: 43}, key: G, scale: major}
+  - {name: "Ab1 - Ab Major", trigger: {type: note_on, note: 44}, key: Ab, scale: major}
+  - {name: "A1 - A Major", trigger: {type: note_on, note: 45}, key: A, scale: major}
+  - {name: "Bb1 - Bb Major", trigger: {type: note_on, note: 46}, key: Bb, scale: major}
+  - {name: "B1 - B Major", trigger: {type: note_on, note: 47}, key: B, scale: major}
+
+  # C2-B2 (notes 48-59): Natural Minor
+  - {name: "C2 - C Natural Minor", trigger: {type: note_on, note: 48}, key: C, scale: natural-minor}
+  - {name: "C#2 - C# Natural Minor", trigger: {type: note_on, note: 49}, key: C#, scale: natural-minor}
+  - {name: "D2 - D Natural Minor", trigger: {type: note_on, note: 50}, key: D, scale: natural-minor}
+  - {name: "Eb2 - Eb Natural Minor", trigger: {type: note_on, note: 51}, key: Eb, scale: natural-minor}
+  - {name: "E2 - E Natural Minor", trigger: {type: note_on, note: 52}, key: E, scale: natural-minor}
+  - {name: "F2 - F Natural Minor", trigger: {type: note_on, note: 53}, key: F, scale: natural-minor}
+  - {name: "F#2 - F# Natural Minor", trigger: {type: note_on, note: 54}, key: F#, scale: natural-minor}
+  - {name: "G2 - G Natural Minor", trigger: {type: note_on, note: 55}, key: G, scale: natural-minor}
+  - {name: "Ab2 - Ab Natural Minor", trigger: {type: note_on, note: 56}, key: Ab, scale: natural-minor}
+  - {name: "A2 - A Natural Minor", trigger: {type: note_on, note: 57}, key: A, scale: natural-minor}
+  - {name: "Bb2 - Bb Natural Minor", trigger: {type: note_on, note: 58}, key: Bb, scale: natural-minor}
+  - {name: "B2 - B Natural Minor", trigger: {type: note_on, note: 59}, key: B, scale: natural-minor}
+
+  # C3-B3 (notes 60-71): Harmonic Minor
+  - {name: "C3 - C Harmonic Minor", trigger: {type: note_on, note: 60}, key: C, scale: harmonic-minor}
+  - {name: "C#3 - C# Harmonic Minor", trigger: {type: note_on, note: 61}, key: C#, scale: harmonic-minor}
+  - {name: "D3 - D Harmonic Minor", trigger: {type: note_on, note: 62}, key: D, scale: harmonic-minor}
+  - {name: "Eb3 - Eb Harmonic Minor", trigger: {type: note_on, note: 63}, key: Eb, scale: harmonic-minor}
+  - {name: "E3 - E Harmonic Minor", trigger: {type: note_on, note: 64}, key: E, scale: harmonic-minor}
+  - {name: "F3 - F Harmonic Minor", trigger: {type: note_on, note: 65}, key: F, scale: harmonic-minor}
+  - {name: "F#3 - F# Harmonic Minor", trigger: {type: note_on, note: 66}, key: F#, scale: harmonic-minor}
+  - {name: "G3 - G Harmonic Minor", trigger: {type: note_on, note: 67}, key: G, scale: harmonic-minor}
+  - {name: "Ab3 - Ab Harmonic Minor", trigger: {type: note_on, note: 68}, key: Ab, scale: harmonic-minor}
+  - {name: "A3 - A Harmonic Minor", trigger: {type: note_on, note: 69}, key: A, scale: harmonic-minor}
+  - {name: "Bb3 - Bb Harmonic Minor", trigger: {type: note_on, note: 70}, key: Bb, scale: harmonic-minor}
+  - {name: "B3 - B Harmonic Minor", trigger: {type: note_on, note: 71}, key: B, scale: harmonic-minor}
+
+  # C4-B4 (notes 72-83): Melodic Minor (Ascending)
+  - {name: "C4 - C Melodic Minor (Ascending)", trigger: {type: note_on, note: 72}, key: C, scale: melodic-minor}
+  - {name: "C#4 - C# Melodic Minor (Ascending)", trigger: {type: note_on, note: 73}, key: C#, scale: melodic-minor}
+  - {name: "D4 - D Melodic Minor (Ascending)", trigger: {type: note_on, note: 74}, key: D, scale: melodic-minor}
+  - {name: "Eb4 - Eb Melodic Minor (Ascending)", trigger: {type: note_on, note: 75}, key: Eb, scale: melodic-minor}
+  - {name: "E4 - E Melodic Minor (Ascending)", trigger: {type: note_on, note: 76}, key: E, scale: melodic-minor}
+  - {name: "F4 - F Melodic Minor (Ascending)", trigger: {type: note_on, note: 77}, key: F, scale: melodic-minor}
+  - {name: "F#4 - F# Melodic Minor (Ascending)", trigger: {type: note_on, note: 78}, key: F#, scale: melodic-minor}
+  - {name: "G4 - G Melodic Minor (Ascending)", trigger: {type: note_on, note: 79}, key: G, scale: melodic-minor}
+  - {name: "Ab4 - Ab Melodic Minor (Ascending)", trigger: {type: note_on, note: 80}, key: Ab, scale: melodic-minor}
+  - {name: "A4 - A Melodic Minor (Ascending)", trigger: {type: note_on, note: 81}, key: A, scale: melodic-minor}
+  - {name: "Bb4 - Bb Melodic Minor (Ascending)", trigger: {type: note_on, note: 82}, key: Bb, scale: melodic-minor}
+  - {name: "B4 - B Melodic Minor (Ascending)", trigger: {type: note_on, note: 83}, key: B, scale: melodic-minor}

@@ -145,17 +145,21 @@ def cmd_snapshot(args):
 
 
 # Measured with SuperRack 15.15 / Tune RT, Plugin Controls page with Scale Root (Continuous 7)
-# and Scale Type (Continuous 8). Chromatic -> scale sets the root to A; from there CC 27 acts
-# relative, so some roots can only be reached in several steps.
+# and Scale Type (Continuous 8). Switching INTO Chromatic resets the root to A, and the next scale starts there;
+# from A, CC 27 acts relative, so some roots can only be reached in several steps.
 ROOT_RECIPES = {
     "A": [5], "B": [18], "C#": [36], "E": [54], "G": [72], "G#": [90],
     "C": [36, 36], "D#": [18, 54], "F#": [18, 72], "A#": [18, 108], "F": [72, 5],
     "D": [36, 36, 54],
 }
 SCALE_CHROMATIC = 4
+# Changing into Chromatic resets the root, but only if Tune RT was not on Chromatic already: a root moved while on
+# Chromatic survives a repeated Chromatic. "Reset Scale" (Discrete 6 on the scale page) clears it in every case,
+# so the sequence is Chromatic, Reset Scale, then the scale.
 # Scale Type values (middle value of each range, see README.md).
 # User Scale (0) is left out on purpose: Chromatic -> User Scale does not reset the root to A.
 SCALE_TYPES = {
+    "chromatic": (SCALE_CHROMATIC, "Chromatic"),  # all 12 notes allowed: the root has no effect and is not set
     "major": (6, "Major"),
     "natural-minor": (9, "Natural Minor"),
     "harmonic-minor": (12, "Harmonic Minor"),
@@ -206,7 +210,7 @@ KEY_DEFAULTS = {
     "rack": None, "hot_plugin": None, "user_key": None,
     "send_to_all": False,
     "pause": 0.1, "nav_pause": 0.02, "max_racks": 64,
-    "root_cc": 27, "type_cc": 28, "send_cc": 20,
+    "root_cc": 27, "type_cc": 28, "send_cc": 20, "reset_cc": 33,
     "next_page_cc": 40, "prev_page_cc": 41, "prev_rack_cc": 42, "next_rack_cc": 43,
     "hot_plugin_cc": 50, "user_key_cc": 70,
 }
@@ -255,7 +259,8 @@ def resolve_key(root_text, opts):
         raise ValueError(f"send_to_all must be true or false, got {opts['send_to_all']!r}")
     check_number(opts["pause"], 0, 10, "pause")
     check_number(opts["nav_pause"], 0, 10, "nav_pause")
-    for name in ("root_cc", "type_cc", "send_cc", "next_page_cc", "prev_page_cc", "prev_rack_cc", "next_rack_cc"):
+    for name in ("root_cc", "type_cc", "send_cc", "reset_cc", "next_page_cc", "prev_page_cc", "prev_rack_cc",
+                 "next_rack_cc"):
         check_int(opts[name], 0, 127, name)
     check_int(opts["hot_plugin_cc"], 0, 127 - 11, "hot_plugin_cc")  # Hot Plugins 1-12 follow
     check_int(opts["user_key_cc"], 0, 127 - 15, "user_key_cc")      # User Keys 1-16 follow
@@ -300,8 +305,11 @@ def run_key(out, channel, root_text, opts):
         press(opts["next_page_cc"])  # page 1 -> page 2 (Scale)
 
     cc(opts["type_cc"], SCALE_CHROMATIC)
-    cc(opts["type_cc"], scale_value)
-    for v in ROOT_RECIPES[root]:
+    press(opts["reset_cc"])  # Reset Scale: the next scale starts on A
+    steps = [] if scale_value == SCALE_CHROMATIC else ROOT_RECIPES[root]
+    if steps:
+        cc(opts["type_cc"], scale_value)
+    for v in steps:
         cc(opts["root_cc"], v)
     if opts["send_to_all"]:
         # Send to All = Discrete 1 on page 3 (Transmission); then back to page 2.
@@ -311,8 +319,11 @@ def run_key(out, channel, root_text, opts):
 
     where = (f" in rack {opts['rack']}" if opts["rack"] else f" on Hot Plugin {opts['hot_plugin']}"
              if opts["hot_plugin"] else f" on User Key {opts['user_key']}" if opts["user_key"] else "")
-    return (f"{root} {scale_name}{where}: CC {opts['type_cc']} = {SCALE_CHROMATIC}, {scale_value}; "
-            f"CC {opts['root_cc']} = {ROOT_RECIPES[root]}" + ("; Send to All" if opts["send_to_all"] else ""))
+    if not steps:
+        return (f"{scale_name} (root has no effect){where}: CC {opts['type_cc']} = {SCALE_CHROMATIC}, Reset Scale"
+                + ("; Send to All" if opts["send_to_all"] else ""))
+    return (f"{root} {scale_name}{where}: CC {opts['type_cc']} = {SCALE_CHROMATIC}, Reset Scale, CC {opts['type_cc']} = "
+            f"{scale_value}; CC {opts['root_cc']} = {steps}" + ("; Send to All" if opts["send_to_all"] else ""))
 
 
 def cmd_key(args):
@@ -529,7 +540,8 @@ def describe_action(action, channel):
         scale = SCALE_TYPES[o["scale"]][1] if o["scale_value"] is None else f"Scale Type value {o['scale_value']}"
         target = (f", rack {o['rack']}" if o["rack"] else f", Hot Plugin {o['hot_plugin']}" if o["hot_plugin"]
                   else f", User Key {o['user_key']}" if o["user_key"] else "")
-        return f"key {root} {scale}{target}" + (", Send to All" if o["send_to_all"] else "")
+        what = scale if scale == "Chromatic" else f"{root} {scale}"
+        return f"key {what}{target}" + (", Send to All" if o["send_to_all"] else "")
     if action["do"] == "cc":
         return f"CC {action['cc']} = {action['value']} on channel {action['channel'] or channel}"
     if action["do"] == "snapshot":
@@ -715,8 +727,10 @@ def check_no_feedback(mapping, channel, port_name):
                 ch = channel - 1
                 root, scale_value, _ = resolve_key(a["root"], o)
                 sent |= {("control_change", ch, o["type_cc"], v) for v in (SCALE_CHROMATIC, scale_value)}
-                sent |= {("control_change", ch, o["root_cc"], v) for v in ROOT_RECIPES[root]}
-                buttons = {o[k] for k in ("send_cc", "next_page_cc", "prev_page_cc", "prev_rack_cc", "next_rack_cc")}
+                if scale_value != SCALE_CHROMATIC:
+                    sent |= {("control_change", ch, o["root_cc"], v) for v in ROOT_RECIPES[root]}
+                buttons = {o[k] for k in ("send_cc", "reset_cc", "next_page_cc", "prev_page_cc", "prev_rack_cc",
+                                          "next_rack_cc")}
                 if o["hot_plugin"]:
                     buttons.add(o["hot_plugin_cc"] + o["hot_plugin"] - 1)
                 if o["user_key"]:
@@ -943,6 +957,8 @@ def main():
                    help="CC of User Key 1, the others follow (default: 70)")
     s.add_argument("--send-cc", type=int, default=KEY_DEFAULTS["send_cc"],
                    help="Discrete 1 / Send to All (default: 20)")
+    s.add_argument("--reset-cc", type=int, default=KEY_DEFAULTS["reset_cc"],
+                   help="Discrete 6 / Reset Scale (default: 33)")
     s.add_argument("--prev-page-cc", type=int, default=KEY_DEFAULTS["prev_page_cc"])
     s.add_argument("--next-page-cc", type=int, default=KEY_DEFAULTS["next_page_cc"])
     s.set_defaults(func=cmd_key)

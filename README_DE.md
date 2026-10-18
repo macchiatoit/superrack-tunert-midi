@@ -17,10 +17,11 @@ offline, die Parameter reagieren im Plugin aber trotzdem.
   **Continuous 7 = Scale Root**, **Continuous 8 = Scale Type** (auf Seite 2).
 - Der Regler für Scale Root wirkt **relativ** zum vorherigen Zustand. Ein fester Wert entspricht also
   nicht immer demselben Grundton.
-- Zuverlässig wird es so: erst Scale Type auf **Chromatic**, dann die gewünschte Skala. Danach steht der
-  Grundton immer auf **A**. Von dort setzt eine feste Folge von 1 bis 3 Root-Werten jeden der 12 Grundtöne.
-- Getestet mit **allen 42 Skalen** aus Tune RT, je alle 12 Grundtöne. Bei 41 Skalen gab es **keine Abweichung**.
-  Die Ausnahme ist die **User Scale**.
+- Zuverlässig wird es so: Scale Type auf **Chromatic**, **Reset Scale** drücken, dann die gewünschte Skala setzen.
+  Die gewünschte Skala beginnt dann immer auf **A**. Von dort setzt eine feste Folge von 1 bis 3 Root-Werten jeden der 12 Grundtöne.
+- Getestet mit **allen 42 Skalen** aus Tune RT (ausser Chromatic und User Scale), je alle 12 Grundtöne, mit dem
+  aktuellen Ablauf: **504 von 504 richtig**, jede Skala ausgehend vom ungünstigsten Fall (Chromatic mit verschobenem
+  Grundton). Die **User Scale** funktioniert nicht.
 - **Send to All** (Seite 3, Discrete 1) überträgt Skala und Grundton an **alle** anderen Tune-RT-Instanzen mit
   aktivem **Receive**.
 - Ein bestimmtes Tune RT lässt sich absolut per **Hot Plugin** oder **User Key** wählen, ein Rack per Rack-Navigation.
@@ -92,10 +93,11 @@ Nach jedem Rack- oder Plugin-Wechsel stehen sie auf **Seite 1**, also **einmal N
 User Keys, Send to All) lösen bei **jeder** Nachricht aus, auch bei Wert 0. Darum pro Druck genau **eine**
 Nachricht senden, z. B. Wert 127.
 
-1. Scale Type (CC 28) = **4** (Chromatic). Das ist die Rücksetzung.
-2. Scale Type (CC 28) = Wert der gewünschten Skala (Tabelle unten). Der Grundton steht jetzt auf **A**.
-3. Scale Root (CC 27): die Werte aus der Grundton-Tabelle **nacheinander** senden.
-4. Optional **Send to All**: NEXT PAGE (→ Seite 3), Discrete 1 (CC 20), PREV PAGE (zurück auf Seite 2).
+1. Scale Type (CC 28) = **4** (Chromatic).
+2. **Reset Scale** (Discrete 6 = CC 33, eine Nachricht). Zusammen mit Schritt 1 ist das die Rücksetzung.
+3. Scale Type (CC 28) = Wert der gewünschten Skala (Tabelle unten). Der Grundton steht jetzt auf **A**.
+4. Scale Root (CC 27): die Werte aus der Grundton-Tabelle **nacheinander** senden.
+5. Optional **Send to All**: NEXT PAGE (→ Seite 3), Discrete 1 (CC 20), PREV PAGE (zurück auf Seite 2).
    Alle anderen Tune RT mit aktivem Receive übernehmen jetzt Skala und Grundton.
 
 Beispiel D Harmonic Minor, als Control Change auf Kanal 1:
@@ -103,6 +105,7 @@ Beispiel D Harmonic Minor, als Control Change auf Kanal 1:
 | Schritt | CC | Wert |
 |---|---|---|
 | Chromatic | 28 | 4 |
+| Reset Scale | 33 | 127 |
 | Harmonic Minor | 28 | 12 |
 | Root-Schritt 1 | 27 | 36 |
 | Root-Schritt 2 | 27 | 36 |
@@ -119,13 +122,13 @@ Die Namen sind aus dem Plugin abgelesen. Mit „…“ steht da, wo das Plugin d
 
 | Bereich | empfohlen | Skala | `--scale` | Rezepte getestet |
 |---|---|---|---|---|
-| 0–1 | 0 | User Scale | – | ✗ funktioniert nicht |
-| 2–4 | **4** | Chromatic | – | (Reset-Wert) |
-| 5–7 | 6 | Major | `major` | ✓ 2× |
-| 8–10 | 9 | Natural Minor | `natural-minor` | ✓ 2× |
-| 11–13 | 12 | Harmonic Minor | `harmonic-minor` | ✓ 2× |
-| 14–16 | 15 | Melodic Minor (Ascending) | `melodic-minor` | ✓ 2× |
-| 17–19 | 18 | Melodic Minor (Ascending & Descending) | `melodic-minor-ad` | ✓ 2× |
+| 0–1 | 0 | User Scale | – | ✗ funktioniert nicht (auch nicht nach Reset Scale) |
+| 2–4 | **4** | Chromatic | `chromatic` | (Reset-Wert; der Grundton hat keine Wirkung) |
+| 5–7 | 6 | Major | `major` | ✓ |
+| 8–10 | 9 | Natural Minor | `natural-minor` | ✓ |
+| 11–13 | 12 | Harmonic Minor | `harmonic-minor` | ✓ |
+| 14–16 | 15 | Melodic Minor (Ascending) | `melodic-minor` | ✓ |
+| 17–19 | 18 | Melodic Minor (Ascending & Descending) | `melodic-minor-ad` | ✓ |
 | 20–22 | 21 | Major Justonic | `major-justonic` | ✓ |
 | 23–25 | 24 | Minor Justonic | `minor-justonic` | ✓ |
 | 26–28 | 27 | Dorian | `dorian` | ✓ |
@@ -165,7 +168,7 @@ Die Namen sind aus dem Plugin abgelesen. Mit „…“ steht da, wo das Plugin d
 | 126–127 | 126 | Asavari (Carnatic) | `asavari-carnatic` | ✓ |
 
 Bei Blues (32–33) und Bilawal (Hindustani) (94–95) ist der Bereich nur 2 Werte breit.
-„✓ 2×“: alle 12 Grundtöne in zwei Durchgängen, „✓“: in einem Durchgang.
+„✓“: alle 12 Grundtöne mit dem aktuellen Ablauf geprüft (Chromatic → Reset Scale → Skala).
 
 ### Scale Root (Continuous 7): Folge ab Startpunkt A
 
@@ -203,7 +206,8 @@ Tune RT zeigt manche Grundtöne enharmonisch verwechselt an (z. B. G♭ statt F�
 
 ### Pausen zwischen den Nachrichten
 
-Major, alle 12 Grundtöne × 2 Durchgänge pro Pausenlänge:
+Major, alle 12 Grundtöne × 2 Durchgänge pro Pausenlänge, mit dem aktuellen Ablauf (der zweite Durchgang jeweils
+ausgehend von Chromatic mit verschobenem Grundton):
 
 | Pause | richtig |
 |---|---|
@@ -214,7 +218,7 @@ Major, alle 12 Grundtöne × 2 Durchgänge pro Pausenlänge:
 | 0,05 s | 24/24 |
 | 0 s | 24/24 |
 
-Das Skript nutzt standardmässig 0,1 s. Die Rezepttests für alle Skalen liefen mit 0,6 s bzw. 0,9 s.
+Das Skript nutzt standardmässig 0,1 s; der Test aller 42 Skalen lief damit.
 
 ## Ziel-Plugin wählen
 
@@ -230,7 +234,8 @@ Hot Plugin und User Key wählen ein **bestimmtes Plugin** absolut, die Rack-Navi
 
 **Vorsicht bei der Rack-Wahl:** SuperRack merkt sich pro Rack das gewählte Plugin, nach einem Neustart ist das
 Slot 1. Steht dort ein anderes Plugin (z. B. Vocal Rider vor Tune RT), bewegen die Plugin Controls dessen
-Parameter. Für den Live-Einsatz sind Hot Plugins oder User Keys die sichere Wahl.
+Parameter, und der Reset-Scale-Druck löst dessen Discrete-6-Knopf aus. Für den Live-Einsatz sind Hot Plugins oder
+User Keys die sichere Wahl.
 
 **Warum vorher PREV RACK + NEXT RACK?** Die Plugin Controls springen nur bei einem echten Rack- oder
 Plugin-Wechsel auf Seite 1. Ist das Ziel-Plugin schon gewählt, bleibt die Seite stehen, und NEXT PAGE landet
@@ -291,7 +296,7 @@ Tonart setzen:
 | `--hot-plugin N` / `--user-key N` / `--rack N` | vorher das Ziel-Plugin wählen (schliessen sich gegenseitig aus) |
 | `--send-to-all` | danach Send to All drücken |
 | `--pause SEK` | Pause nach jeder Nachricht, Standard 0,1 |
-| `--root-cc`, `--type-cc`, `--send-cc`, `--next-page-cc`, `--prev-page-cc`, `--prev-rack-cc`, `--next-rack-cc`, `--hot-plugin-cc`, `--user-key-cc` | andere CCs, falls die Belegung abweicht |
+| `--root-cc`, `--type-cc`, `--send-cc`, `--reset-cc`, `--next-page-cc`, `--prev-page-cc`, `--prev-rack-cc`, `--next-rack-cc`, `--hot-plugin-cc`, `--user-key-cc` | andere CCs, falls die Belegung abweicht |
 
 Ohne `--hot-plugin`, `--user-key` oder `--rack` geht das Skript davon aus, dass Tune RT schon gewählt ist und
 Seite 2 aktiv ist.
@@ -402,6 +407,30 @@ später). Andere Trigger, die in der Zwischenzeit kommen, werden danach der Reih
 Getestet mit einem Launchpad Pro (Note-Modus, oberste Reihe = Noten 71–74) und SuperRack: Jeder Pad-Druck löste das
 richtige Mapping aus, nicht belegte Pads und Aftertouch wurden ignoriert.
 
+### Beispiel: Digitalpiano (`mapping.arius.yaml`)
+
+[`mapping.arius.yaml`](mapping.arius.yaml) macht aus einem Yamaha-ARIUS-Digitalpiano einen Tonart-Wähler: eine Oktave
+pro Skala, die gedrückte Taste ist der Grundton. Jede Taste zielt auf Hot Plugin 1 und drückt Send to All, alle Tune RT
+mit Receive ziehen also mit.
+
+Alle 88 Tasten des Pianos (A−1 bis C7). Die Spalte ist der Grundton, die Zelle die Skala, die die Taste setzt; „–“ heisst
+nicht belegt, „·“ heisst, diese Taste gibt es auf einem 88-Tasten-Piano nicht. Die Oktaven sind nach Yamaha nummeriert
+(mittleres C = C3 = Note 60); `monitor` zeigt, welche Notennummern dein Instrument tatsächlich sendet.
+
+| Oktave (Noten) | C | C♯ | D | E♭ | E | F | F♯ | G | A♭ | A | B♭ | B |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| -1 (21–23) | · | · | · | · | · | · | · | · | · | – | – | – |
+| 0 (24–35) | **Chromatic** | **Chromatic** | **Chromatic** | **Chromatic** | **Chromatic** | **Chromatic** | **Chromatic** | **Chromatic** | **Chromatic** | **Chromatic** | **Chromatic** | **Chromatic** |
+| 1 (36–47) | **Major** | **Major** | **Major** | **Major** | **Major** | **Major** | **Major** | **Major** | **Major** | **Major** | **Major** | **Major** |
+| 2 (48–59) | **Nat. Minor** | **Nat. Minor** | **Nat. Minor** | **Nat. Minor** | **Nat. Minor** | **Nat. Minor** | **Nat. Minor** | **Nat. Minor** | **Nat. Minor** | **Nat. Minor** | **Nat. Minor** | **Nat. Minor** |
+| 3 (60–71) | **Harm. Minor** | **Harm. Minor** | **Harm. Minor** | **Harm. Minor** | **Harm. Minor** | **Harm. Minor** | **Harm. Minor** | **Harm. Minor** | **Harm. Minor** | **Harm. Minor** | **Harm. Minor** | **Harm. Minor** |
+| 4 (72–83) | **Mel. Minor** | **Mel. Minor** | **Mel. Minor** | **Mel. Minor** | **Mel. Minor** | **Mel. Minor** | **Mel. Minor** | **Mel. Minor** | **Mel. Minor** | **Mel. Minor** | **Mel. Minor** | **Mel. Minor** |
+| 5 (84–95) | – | – | – | – | – | – | – | – | – | – | – | – |
+| 6 (96–107) | – | – | – | – | – | – | – | – | – | – | – | – |
+| 7 (108) | – | · | · | · | · | · | · | · | · | · | · | · |
+
+Die Chromatic-Oktave setzt bei allen 12 Tasten Chromatic: Dort sind alle Töne erlaubt, der Grundton hat keine Wirkung.
+
 ## Messdaten
 
 ### Ein Schritt ab A (Major, Durchlauf 0–127, jeweils vorher Chromatic → Major)
@@ -436,6 +465,13 @@ Mit zwei Schritten sind 11 Grundtöne erreichbar. D braucht drei (36, 36, 54).
 ### Ohne Rücksetzung: nicht verwendbar
 
 Ohne Chromatic → Skala vorher hängt das Ergebnis vom vorherigen Grundton ab.
+
+Die Rücksetzung passiert nur bei einem echten **Wechsel in** Chromatic. Steht Tune RT schon auf Chromatic und wurde der
+Grundton dort verschoben (über den Scale-Root-Regler oder einen Klick auf eine Grundton-Taste), ändert ein erneutes
+Chromatic nichts, und die nächste Skala behält den verschobenen Grundton: Chromatic mit Grundton G → Major ergab G statt
+A. **Reset Scale** löscht den Grundton in jedem Fall, darum Chromatic → Reset Scale → Skala. Live geprüft: Aus diesem
+Zustand kamen E Major, C Natural Minor, F Harmonic Minor und E♭ Melodic Minor richtig heraus, dazu alle 42 Skalen × 12 Grundtöne
+(siehe Kurzfassung).
 Beispiel: CC 50 von 0 aus angefahren ergab E♭, von 127 aus angefahren D♯. Die Folge 0, 1, 2, 3, 4, 5 ergab
 G♯, F♯, G♭, E, G♭, E.
 
@@ -468,11 +504,12 @@ daher bekommt auch Reference (Hz) einen roten Rahmen (es ist dort Continuous 3),
 | **2 (Scale)** | Discrete 1 | Reference Tone |
 | **2 (Scale)** | Discrete 2 | Target Pitch |
 | **2 (Scale)** | Discrete 5 | Group Octaves |
-| **2 (Scale)** | Discrete 6 | vermutlich Reset Scale (nicht separat getestet) |
+| **2 (Scale)** | Discrete 6 | Reset Scale |
 | **2 (Scale)** | Discrete 7 | ♭/♯-Anzeige |
 | 3 (Transmission) | **Discrete 1** | **Send to All** |
 | 3 (Transmission) | Discrete 2 | Receive |
 | 3 (Transmission) | Continuous 7/8 | Ausschnitt der Tastatur-Anzeige |
 
-Reset Scale und Send to All sind kurz gedrückte Knöpfe und zeigen im eigenen Plugin keine sichtbare Wirkung.
-Send to All wurde über die Wirkung auf die anderen Instanzen gefunden. Für den Ablauf oben braucht es Reset Scale nicht.
+Reset Scale und Send to All sind kurz gedrückte Knöpfe. Send to All wurde über die Wirkung auf die anderen Instanzen
+gefunden; Reset Scale zeigt seine Wirkung, wenn Tune RT auf Chromatic mit gesetztem Grundton steht: Der Grundton
+verschwindet.

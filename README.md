@@ -17,10 +17,11 @@ during testing, but the plugin parameters still respond.
   **Continuous 7 = Scale Root**, **Continuous 8 = Scale Type** (on page 2).
 - The Scale Root control acts **relative** to its previous state. A fixed value therefore does not always
   give the same root.
-- The reliable way: first set Scale Type to **Chromatic**, then to the desired scale. The root is then always
-  **A**. From there, a fixed sequence of 1 to 3 root values reaches each of the 12 roots.
-- Tested with **all 42 scales** of Tune RT, all 12 roots each. **No deviations** for 41 scales.
-  The exception is **User Scale**.
+- The reliable way: set Scale Type to **Chromatic**, press **Reset Scale**, then set the desired scale. That always
+  starts the desired scale on **A**. From there, a fixed sequence of 1 to 3 root values reaches each of the 12 roots.
+- Tested with **all 42 scales** of Tune RT (besides Chromatic and User Scale), all 12 roots each, with the current
+  sequence: **504 of 504 correct**, each scale starting from the worst case (Chromatic with a moved root).
+  **User Scale** does not work.
 - **Send to All** (page 3, Discrete 1) transfers scale and root to **all** other Tune RT instances with
   **Receive** enabled.
 - A specific Tune RT can be selected absolutely via **Hot Plugin** or **User Key**, a rack via rack navigation.
@@ -92,10 +93,11 @@ After every rack or plugin change they are on **page 1**, so press **NEXT PAGE o
 User Keys, Send to All) trigger on **every** message, including value 0. So send exactly **one** message per
 press, e.g. value 127.
 
-1. Scale Type (CC 28) = **4** (Chromatic). This is the reset.
-2. Scale Type (CC 28) = value of the desired scale (table below). The root is now **A**.
-3. Scale Root (CC 27): send the values from the root table **one after another**.
-4. Optional **Send to All**: NEXT PAGE (→ page 3), Discrete 1 (CC 20), PREV PAGE (back to page 2).
+1. Scale Type (CC 28) = **4** (Chromatic).
+2. **Reset Scale** (Discrete 6 = CC 33, one message). Together with step 1 this is the reset.
+3. Scale Type (CC 28) = value of the desired scale (table below). The root is now **A**.
+4. Scale Root (CC 27): send the values from the root table **one after another**.
+5. Optional **Send to All**: NEXT PAGE (→ page 3), Discrete 1 (CC 20), PREV PAGE (back to page 2).
    All other Tune RT instances with Receive enabled now take over scale and root.
 
 Example D Harmonic Minor, as Control Change on channel 1:
@@ -103,6 +105,7 @@ Example D Harmonic Minor, as Control Change on channel 1:
 | Step | CC | Value |
 |---|---|---|
 | Chromatic | 28 | 4 |
+| Reset Scale | 33 | 127 |
 | Harmonic Minor | 28 | 12 |
 | Root step 1 | 27 | 36 |
 | Root step 2 | 27 | 36 |
@@ -119,13 +122,13 @@ The names were read from the plugin. "…" marks where the plugin itself abbrevi
 
 | Range | Recommended | Scale | `--scale` | Recipes tested |
 |---|---|---|---|---|
-| 0–1 | 0 | User Scale | – | ✗ does not work |
-| 2–4 | **4** | Chromatic | – | (reset value) |
-| 5–7 | 6 | Major | `major` | ✓ 2× |
-| 8–10 | 9 | Natural Minor | `natural-minor` | ✓ 2× |
-| 11–13 | 12 | Harmonic Minor | `harmonic-minor` | ✓ 2× |
-| 14–16 | 15 | Melodic Minor (Ascending) | `melodic-minor` | ✓ 2× |
-| 17–19 | 18 | Melodic Minor (Ascending & Descending) | `melodic-minor-ad` | ✓ 2× |
+| 0–1 | 0 | User Scale | – | ✗ does not work (not even after Reset Scale) |
+| 2–4 | **4** | Chromatic | `chromatic` | (reset value; the root has no effect) |
+| 5–7 | 6 | Major | `major` | ✓ |
+| 8–10 | 9 | Natural Minor | `natural-minor` | ✓ |
+| 11–13 | 12 | Harmonic Minor | `harmonic-minor` | ✓ |
+| 14–16 | 15 | Melodic Minor (Ascending) | `melodic-minor` | ✓ |
+| 17–19 | 18 | Melodic Minor (Ascending & Descending) | `melodic-minor-ad` | ✓ |
 | 20–22 | 21 | Major Justonic | `major-justonic` | ✓ |
 | 23–25 | 24 | Minor Justonic | `minor-justonic` | ✓ |
 | 26–28 | 27 | Dorian | `dorian` | ✓ |
@@ -165,7 +168,7 @@ The names were read from the plugin. "…" marks where the plugin itself abbrevi
 | 126–127 | 126 | Asavari (Carnatic) | `asavari-carnatic` | ✓ |
 
 For Blues (32–33) and Bilawal (Hindustani) (94–95) the range is only 2 values wide.
-"✓ 2×": all 12 roots in two runs, "✓": in one run.
+"✓": all 12 roots verified with the current sequence (Chromatic → Reset Scale → scale).
 
 ### Scale Root (Continuous 7): sequences starting from A
 
@@ -201,7 +204,8 @@ Tune RT displays some roots as their enharmonic equivalent (e.g. G♭ instead of
 
 ### Pauses between messages
 
-Major, all 12 roots × 2 runs per pause length:
+Major, all 12 roots × 2 runs per pause length, with the current sequence (the second run each time starting from
+Chromatic with a moved root):
 
 | Pause | Correct |
 |---|---|
@@ -212,7 +216,7 @@ Major, all 12 roots × 2 runs per pause length:
 | 0.05 s | 24/24 |
 | 0 s | 24/24 |
 
-The script uses 0.1 s by default. The recipe tests for all scales ran with 0.6 s / 0.9 s.
+The script uses 0.1 s by default; the test of all 42 scales ran with it.
 
 ## Selecting the target plugin
 
@@ -228,7 +232,8 @@ Hot Plugin and User Key select a **specific plugin** absolutely; rack navigation
 
 **Caution with rack selection:** SuperRack remembers the selected plugin per rack. After a restart this is
 slot 1. If another plugin sits there (e.g. Vocal Rider before Tune RT), the Plugin Controls then move **that**
-plugin's parameters. For live use, Hot Plugins or User Keys are the safe choice.
+plugin's parameters, and the Reset Scale press triggers its Discrete 6 button. For live use, Hot Plugins or User Keys
+are the safe choice.
 
 **Why PREV RACK + NEXT RACK first?** The Plugin Controls only jump to page 1 on an actual rack or
 plugin change. If the target plugin is already selected, the page stays where it is, and NEXT PAGE ends up
@@ -289,7 +294,7 @@ Setting a key:
 | `--hot-plugin N` / `--user-key N` / `--rack N` | select the target plugin first (mutually exclusive) |
 | `--send-to-all` | press Send to All afterwards |
 | `--pause SEC` | pause after each message, default 0.1 |
-| `--root-cc`, `--type-cc`, `--send-cc`, `--next-page-cc`, `--prev-page-cc`, `--prev-rack-cc`, `--next-rack-cc`, `--hot-plugin-cc`, `--user-key-cc` | different CCs if your mapping differs |
+| `--root-cc`, `--type-cc`, `--send-cc`, `--reset-cc`, `--next-page-cc`, `--prev-page-cc`, `--prev-rack-cc`, `--next-rack-cc`, `--hot-plugin-cc`, `--user-key-cc` | different CCs if your mapping differs |
 
 Without `--hot-plugin`, `--user-key` or `--rack`, the script assumes Tune RT is already selected and page 2 is active.
 
@@ -397,6 +402,30 @@ Other triggers that arrive meanwhile are executed afterwards, in order.
 Tested with a Launchpad Pro (Note mode, top row = notes 71–74) and SuperRack: every pad press ran the right
 mapping, unmapped pads and aftertouch were ignored.
 
+### Example: digital piano (`mapping.arius.yaml`)
+
+[`mapping.arius.yaml`](mapping.arius.yaml) turns a Yamaha ARIUS digital piano into a key selector: one octave per
+scale, the key you press is the root. Every key targets Hot Plugin 1 and presses Send to All, so all Tune RT instances
+with Receive follow.
+
+All 88 keys of the piano (A−1 to C7). The column is the root, the cell the scale that the key sets; "–" means not
+mapped, "·" means there is no such key on an 88-key piano. Octaves are numbered the Yamaha way (middle C = C3 =
+note 60); `monitor` shows the note numbers your instrument actually sends.
+
+| Octave (notes) | C | C♯ | D | E♭ | E | F | F♯ | G | A♭ | A | B♭ | B |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| -1 (21–23) | · | · | · | · | · | · | · | · | · | – | – | – |
+| 0 (24–35) | **Chromatic** | **Chromatic** | **Chromatic** | **Chromatic** | **Chromatic** | **Chromatic** | **Chromatic** | **Chromatic** | **Chromatic** | **Chromatic** | **Chromatic** | **Chromatic** |
+| 1 (36–47) | **Major** | **Major** | **Major** | **Major** | **Major** | **Major** | **Major** | **Major** | **Major** | **Major** | **Major** | **Major** |
+| 2 (48–59) | **Nat. Minor** | **Nat. Minor** | **Nat. Minor** | **Nat. Minor** | **Nat. Minor** | **Nat. Minor** | **Nat. Minor** | **Nat. Minor** | **Nat. Minor** | **Nat. Minor** | **Nat. Minor** | **Nat. Minor** |
+| 3 (60–71) | **Harm. Minor** | **Harm. Minor** | **Harm. Minor** | **Harm. Minor** | **Harm. Minor** | **Harm. Minor** | **Harm. Minor** | **Harm. Minor** | **Harm. Minor** | **Harm. Minor** | **Harm. Minor** | **Harm. Minor** |
+| 4 (72–83) | **Mel. Minor** | **Mel. Minor** | **Mel. Minor** | **Mel. Minor** | **Mel. Minor** | **Mel. Minor** | **Mel. Minor** | **Mel. Minor** | **Mel. Minor** | **Mel. Minor** | **Mel. Minor** | **Mel. Minor** |
+| 5 (84–95) | – | – | – | – | – | – | – | – | – | – | – | – |
+| 6 (96–107) | – | – | – | – | – | – | – | – | – | – | – | – |
+| 7 (108) | – | · | · | · | · | · | · | · | · | · | · | · |
+
+The Chromatic octave sets Chromatic for all 12 keys: in Chromatic every note is allowed, so the root has no effect.
+
 ## Measurements
 
 ### One step from A (Major, sweep 0–127, Chromatic → Major before each value)
@@ -431,6 +460,12 @@ With two steps, 11 roots are reachable. D needs three (36, 36, 54).
 ### Without the reset: not usable
 
 Without Chromatic → scale first, the result depends on the previous root.
+
+The reset only happens on an actual **change into** Chromatic. If Tune RT already is on Chromatic and its root was
+moved there (by the Scale Root control or a click on a root key), sending Chromatic again changes nothing, and the next
+scale keeps the moved root: Chromatic with root G → Major gave G instead of A. **Reset Scale** clears the root in every
+case, hence Chromatic → Reset Scale → scale. Verified live: from that state E Major, C Natural Minor, F Harmonic Minor
+and E♭ Melodic Minor came out right, and all 42 scales × 12 roots (see the summary).
 Example: CC 50 approached from 0 gave E♭, approached from 127 gave D♯. The sequence 0, 1, 2, 3, 4, 5 gave
 G♯, F♯, G♭, E, G♭, E.
 
@@ -463,11 +498,11 @@ so Reference (Hz) gets a red frame too (it is Continuous 3 on that page), althou
 | **2 (Scale)** | Discrete 1 | Reference Tone |
 | **2 (Scale)** | Discrete 2 | Target Pitch |
 | **2 (Scale)** | Discrete 5 | Group Octaves |
-| **2 (Scale)** | Discrete 6 | probably Reset Scale (not tested separately) |
+| **2 (Scale)** | Discrete 6 | Reset Scale |
 | **2 (Scale)** | Discrete 7 | ♭/♯ display |
 | 3 (Transmission) | **Discrete 1** | **Send to All** |
 | 3 (Transmission) | Discrete 2 | Receive |
 | 3 (Transmission) | Continuous 7/8 | keyboard display range |
 
-Reset Scale and Send to All are momentary buttons and show no visible effect in their own plugin.
-Send to All was identified through its effect on the other instances. The procedure above does not need Reset Scale.
+Reset Scale and Send to All are momentary buttons. Send to All was identified through its effect on the other
+instances; Reset Scale shows its effect when Tune RT is on Chromatic with a root set: the root is cleared.
