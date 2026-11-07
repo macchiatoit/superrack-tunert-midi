@@ -267,13 +267,31 @@ verschoben, Wechsel zwischen zwei Instanzen, Start bei Rack 1.
 
 ## Das Skript `tunert_midi.py`
 
-Benötigt Python 3 und die Pakete aus [`requirements.txt`](requirements.txt) (`mido`, `python-rtmidi`, `PyYAML`):
+Benötigt Python 3 und die Pakete aus [`requirements.txt`](requirements.txt) (`mido`, `python-rtmidi`, `PyYAML`).
+**Python 3.8 bis 3.12 verwenden:** `python-rtmidi` gibt es nur für diese Versionen als fertiges Paket. Mit Python 3.13
+oder neuer will pip es kompilieren und scheitert ohne C++-Compiler (Visual Studio Build Tools unter Windows, Xcode
+Command Line Tools unter macOS).
+
+macOS:
 
 ```bash
-python3 -m venv .venv
+python3.12 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 .venv/bin/python tunert_midi.py ports
 ```
+
+Windows (PowerShell; Python 3.12 von python.org oder mit `py install 3.12`):
+
+```powershell
+py -3.12 -m venv .venv
+.venv\Scripts\pip install -r requirements.txt
+.venv\Scripts\python tunert_midi.py ports
+```
+
+Windows hat keinen IAC-Bus. Einen virtuellen MIDI-Port mit [loopMIDI](https://www.tobias-erichsen.de/software/loopmidi.html)
+anlegen, ihn in SuperRack unter MIDI IN anhaken und mit `--port loopMIDI` angeben (oder `output: loopMIDI` in einer
+Mapping-Datei). Die Beispiele unten zeigen die macOS-Pfade; unter Windows `.venv\Scripts\python` statt
+`.venv/bin/python` verwenden. Das Skript selbst wurde nur unter macOS getestet.
 
 `ports` listet die MIDI-Ausgänge und -Eingänge. Ohne `--port` nimmt das Skript den Ausgang mit „IAC“ im Namen.
 `--port` und `--input` nehmen den vollen Namen oder einen Teil davon, solange er genau einen Port trifft. Sonst bricht
@@ -359,6 +377,7 @@ mappings:
 | `channel` | 1–16; weglassen = jeder Kanal |
 | `note` / `control` / `program` | Zahl 0–127 oder Bereich wie `[60, 72]` |
 | `velocity` (Noten) / `value` (CC) | optional, Zahl oder Bereich, z. B. `value: [64, 127]` für „Fader in der oberen Hälfte“ |
+| `input` | optional, nur bei mehreren Eingängen: nur auf Nachrichten von diesem Eingang reagieren (Teil des Portnamens) |
 
 Ein `note_on` mit Velocity 0 zählt als `note_off`. Das Loslassen eines Pads löst also kein `note_on`-Mapping aus.
 
@@ -374,12 +393,36 @@ Ein Ziel in der Aktion (`hot_plugin`, `user_key`, `rack`) ersetzt das Ziel aus `
 Können mehrere Trigger auf dieselbe Nachricht passen (z. B. `note: [60, 72]` und `note: 65`), gewinnt das erste
 Mapping; `--check` warnt vor solchen Überschneidungen.
 
+**Mehrere Eingänge:** `input:` nimmt auch eine Liste, z. B. ein Digitalpiano und ein Launchpad gleichzeitig:
+
+```yaml
+input: [ARIUS, Launchpad Pro Standalone]
+
+mappings:
+  - name: Piano C1 - C major
+    trigger: {type: note_on, note: 36, input: ARIUS}
+    key: C
+  - name: Pad - D minor
+    trigger: {type: note_on, note: 36, input: Launchpad}
+    key: D
+    scale: natural-minor
+  - name: Program 5 from any input
+    trigger: {type: program_change, program: 5}
+    key: E
+```
+
+Ein Trigger ohne `input` reagiert auf jeden Eingang, mit `input` nur auf diesen. So kann dieselbe Note auf zwei
+Geräten Verschiedenes auslösen. Das `input` im Trigger muss genau einen der belauschten Eingänge treffen, sonst bricht
+`listen` beim Start ab. Bei mehreren Eingängen schreibt `monitor` den Eingang in jede Zeile (`monitor --input ARIUS
+--input Launchpad`), und `listen` zeigt an, woher ein Trigger kam. Alle Trigger laufen nacheinander, egal von welchem
+Eingang, damit sich zwei Folgen auf dem Weg zu SuperRack nie vermischen.
+
 | Option | Bedeutung |
 |---|---|
 | `--check` | nur die Datei prüfen und alle Mappings auflisten, keine Ports öffnen |
 | `--dry-run` | lauschen, aber nur anzeigen, was gesendet würde |
 | `--verbose` | auch Nachrichten ohne Mapping anzeigen (ohne MIDI-Clock und Active Sensing) |
-| `--input`, `--port`, `--channel` | überschreiben `input`, `output`, `channel` aus der Datei |
+| `--input`, `--port`, `--channel` | überschreiben `input`, `output`, `channel` aus der Datei; `--input` mehrfach für mehrere Eingänge |
 
 Fehler in der Datei werden mit Mapping-Nummer und Name gemeldet, z. B.
 `mapping 2 (Song 2), action 1: unknown scale 'dorain'`. Auch Typen werden geprüft: `send_to_all: "false"` (Text statt
@@ -391,11 +434,11 @@ dieses Triggers werden übersprungen, und ein laufendes `wait` endet sofort.
 landen sie auch bei SuperRack, und die vom Skript gesendeten CCs kommen wieder herein. `listen` lehnt dann Trigger ab,
 die auf eine vom Skript gesendete Nachricht passen (gleicher Kanal und gleiche CC- bzw. Program-Nummer), weil sie sich
 sonst immer wieder selbst auslösen könnten. Besser einen eigenen Eingang nutzen (wie den Launchpad) oder einen anderen Kanal als die
-SuperRack-Belegung.
+SuperRack-Belegung. Bei mehreren Eingängen gilt das für die Trigger, die vom Ausgangsport kommen können.
 
-**Abgesteckter Controller:** `listen` prüft zweimal pro Sekunde, ob sein Eingang noch da ist, und bemerkt so auch ein
-schnelles Aus- und Einstecken. Verschwindet das Gerät, meldet es das, wartet und macht weiter, sobald das Gerät wieder
-da ist. Der Ausgang zu SuperRack wird beim Start geöffnet (lässt er sich nicht öffnen, bricht `listen` sofort ab) und
+**Abgesteckter Controller:** `listen` prüft zweimal pro Sekunde, ob seine Eingänge noch da sind, und bemerkt so auch ein
+schnelles Aus- und Einstecken. Verschwindet ein Gerät, meldet es das, wartet und macht weiter, sobald das Gerät wieder
+da ist; die anderen Eingänge arbeiten in der Zwischenzeit weiter. Der Ausgang zu SuperRack wird beim Start geöffnet (lässt er sich nicht öffnen, bricht `listen` sofort ab) und
 vor jedem Trigger neu geöffnet. Fehlt er (z. B. eine abgerissene Netzwerk-MIDI-Session), wird der Trigger übersprungen
 und gemeldet.
 

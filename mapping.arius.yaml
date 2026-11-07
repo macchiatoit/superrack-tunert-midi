@@ -10,6 +10,10 @@
 #   C3-B3 (60-71)  Harmonic Minor
 #   C4-B4 (72-83)  Melodic Minor (Ascending)
 #   all other keys: not mapped
+#
+# To use a second controller at the same time (e.g. a Launchpad), list both inputs,
+# input: [ARIUS, Launchpad Pro Standalone], and add "input: ARIUS" to these triggers so the Launchpad's notes
+# do not set keys too (see mapping.example.yaml).
 
 input: ARIUS
 output: IAC-Treiber SuperRack SoundGrid

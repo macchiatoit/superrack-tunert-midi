@@ -1,12 +1,13 @@
 # Example mapping for: python tunert_midi.py listen mapping.example.yaml
 #
-# Find out what your controller sends with:
+# Find out what your controllers send with:
 #   python tunert_midi.py monitor --input "<part of the input name>"
-# and copy the printed lines as "trigger:".
+# and copy the printed lines as "trigger:". With several --input options, each line also names its input.
 
-# MIDI input the triggers come from (part of the port name, see "tunert_midi.py ports").
+# MIDI inputs the triggers come from (part of the port name, see "tunert_midi.py ports").
+# One input as text (input: ARIUS) or several as a list. All of them must be connected when listen starts.
 # A Launchpad Pro in Note mode sends the top row as notes 71-78 on channel 1.
-input: Launchpad Pro Standalone
+input: [Launchpad Pro Standalone, ARIUS]
 
 # Output to SuperRack (full name or a part that matches exactly one port). Default: the IAC port.
 output: IAC
@@ -20,19 +21,21 @@ defaults:
   hot_plugin: 1
   send_to_all: true
 
+# "input:" in a trigger limits it to that input (part of the port name, must match exactly one of the inputs above).
+# Without it, a trigger reacts to every input.
 mappings:
   # Short form: one key action directly in the mapping.
   - name: Song 1 - D minor
-    trigger: {type: note_on, channel: 1, note: 71}
+    trigger: {type: note_on, channel: 1, note: 71, input: Launchpad}
     key: D
     scale: natural-minor
 
   - name: Song 2 - E major
-    trigger: {type: note_on, channel: 1, note: 72}
+    trigger: {type: note_on, channel: 1, note: 72, input: Launchpad}
     key: E
 
   - name: Song 3 - Bb dorian, only Hot Plugin 2, no Send to All
-    trigger: {type: note_on, channel: 1, note: 73}
+    trigger: {type: note_on, channel: 1, note: 73, input: Launchpad}
     key: Bb
     scale: dorian
     hot_plugin: 2
@@ -40,18 +43,29 @@ mappings:
 
   # Long form: several actions in a row.
   - name: Two instances in different keys
-    trigger: {type: note_on, channel: 1, note: 74}
+    trigger: {type: note_on, channel: 1, note: 74, input: Launchpad}
     actions:
       - {key: G, scale: major, hot_plugin: 1, send_to_all: false}
       - {key: E, scale: natural-minor, hot_plugin: 2, send_to_all: false}
 
-  # Program Change from a setlist / DAW (program numbers as sent on the wire, 0-127).
+  # The same note numbers from the piano do something else: C3 (middle C, note 60 in Yamaha naming)
+  # and B3 (note 71, the Launchpad's first pad above).
+  - name: Piano C3 - C major
+    trigger: {type: note_on, note: 60, input: ARIUS}
+    key: C
+
+  - name: Piano B3 - B minor
+    trigger: {type: note_on, note: 71, input: ARIUS}
+    key: B
+    scale: natural-minor
+
+  # Program Change from a setlist / DAW (program numbers as sent on the wire, 0-127), from any input.
   - name: Program 5 - F# harmonic minor
     trigger: {type: program_change, channel: 16, program: 5}
     key: F#
     scale: harmonic-minor
 
-  # Control Change with a value range, e.g. a fader: only react to values 64-127.
+  # Control Change with a value range, e.g. a fader: only react to values 64-127, from any input.
   - name: CC 80 high
     trigger: {type: control_change, channel: 16, control: 80, value: [64, 127]}
     actions:

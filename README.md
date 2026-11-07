@@ -265,13 +265,31 @@ switching between two instances, starting at rack 1.
 
 ## The script `tunert_midi.py`
 
-Requires Python 3 and the packages from [`requirements.txt`](requirements.txt) (`mido`, `python-rtmidi`, `PyYAML`):
+Requires Python 3 and the packages from [`requirements.txt`](requirements.txt) (`mido`, `python-rtmidi`, `PyYAML`).
+**Use Python 3.8 to 3.12:** `python-rtmidi` only ships prebuilt packages for these versions. With Python 3.13 or newer,
+pip tries to compile it and fails without a C++ compiler (Visual Studio Build Tools on Windows, Xcode Command Line
+Tools on macOS).
+
+macOS:
 
 ```bash
-python3 -m venv .venv
+python3.12 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 .venv/bin/python tunert_midi.py ports
 ```
+
+Windows (PowerShell; Python 3.12 from python.org or with `py install 3.12`):
+
+```powershell
+py -3.12 -m venv .venv
+.venv\Scripts\pip install -r requirements.txt
+.venv\Scripts\python tunert_midi.py ports
+```
+
+Windows has no IAC bus. Create a virtual MIDI port with [loopMIDI](https://www.tobias-erichsen.de/software/loopmidi.html),
+tick it under MIDI IN in SuperRack, and pass it with `--port loopMIDI` (or `output: loopMIDI` in a mapping file).
+The examples below use the macOS paths; on Windows, use `.venv\Scripts\python` instead of `.venv/bin/python`.
+The script itself was only tested on macOS.
 
 `ports` lists the MIDI outputs and inputs. Without `--port`, the script uses the output with "IAC" in its name.
 `--port` and `--input` accept the full name or a part of it, as long as it matches exactly one port; otherwise the
@@ -356,6 +374,7 @@ mappings:
 | `channel` | 1–16; leave out to accept any channel |
 | `note` / `control` / `program` | number 0–127, or a range like `[60, 72]` |
 | `velocity` (notes) / `value` (CC) | optional, number or range, e.g. `value: [64, 127]` for "fader in the upper half" |
+| `input` | optional, only with several inputs: react only to messages from this input (part of the port name) |
 
 A `note_on` with velocity 0 counts as `note_off`, so releasing a pad does not trigger a `note_on` mapping.
 
@@ -371,12 +390,36 @@ A target in the action (`hot_plugin`, `user_key`, `rack`) replaces the target fr
 If several triggers can match the same message (e.g. `note: [60, 72]` and `note: 65`), the first mapping wins;
 `--check` warns about such overlaps.
 
+**Several inputs:** `input:` also takes a list, e.g. a digital piano and a Launchpad at the same time:
+
+```yaml
+input: [ARIUS, Launchpad Pro Standalone]
+
+mappings:
+  - name: Piano C1 - C major
+    trigger: {type: note_on, note: 36, input: ARIUS}
+    key: C
+  - name: Pad - D minor
+    trigger: {type: note_on, note: 36, input: Launchpad}
+    key: D
+    scale: natural-minor
+  - name: Program 5 from any input
+    trigger: {type: program_change, program: 5}
+    key: E
+```
+
+A trigger without `input` reacts to every input; with `input` only to that one, so the same note on two devices can
+do different things. The trigger `input` has to match exactly one of the inputs listened to, otherwise `listen`
+stops at the start. With several inputs, `monitor` adds the input to every line (`monitor --input ARIUS --input
+Launchpad`), and `listen` shows where each trigger came from. All triggers run one after another, whichever input they
+come from, so two sequences never get mixed up on the way to SuperRack.
+
 | Option | Meaning |
 |---|---|
 | `--check` | only validate the file and list all mappings, open no ports |
 | `--dry-run` | listen, but only print what would be sent |
 | `--verbose` | also print messages without a mapping (MIDI clock and active sensing left out) |
-| `--input`, `--port`, `--channel` | override `input`, `output`, `channel` from the file |
+| `--input`, `--port`, `--channel` | override `input`, `output`, `channel` from the file; repeat `--input` for several inputs |
 
 Errors in the file are reported with mapping number and name, e.g.
 `mapping 2 (Song 2), action 1: unknown scale 'dorain'`. Types are checked too: `send_to_all: "false"` (text instead
@@ -387,10 +430,12 @@ skipped, and a running `wait` ends at once.
 **Avoid loops:** if triggers come in on the same port that SuperRack listens to (e.g. the same IAC bus), they also
 reach SuperRack, and the CCs sent by the script come back in. `listen` then refuses triggers that match a message the
 script sends (same channel and same CC or program number), because they could fire themselves again and again. Use a separate
-input (like the Launchpad) or another channel than the SuperRack mapping.
+input (like the Launchpad) or another channel than the SuperRack mapping. With several inputs, this applies to the
+triggers that can come from the output port.
 
-**Unplugged controller:** `listen` checks twice a second that its input still exists, so even a quick replug is noticed.
-If the device disappears, it says so, waits and continues as soon as the device is back. The output to SuperRack is
+**Unplugged controller:** `listen` checks twice a second that its inputs still exist, so even a quick replug is noticed.
+If a device disappears, it says so, waits and continues as soon as the device is back; the other inputs keep working
+meanwhile. The output to SuperRack is
 opened at start (a port that cannot be opened stops `listen` right away) and reopened before every trigger. If it is
 missing (e.g. a dropped network MIDI session), the trigger is skipped with a message.
 

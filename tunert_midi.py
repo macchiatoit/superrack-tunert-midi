@@ -14,6 +14,7 @@ Examples:
 
 React to incoming MIDI (e.g. a pad or a program change) with a YAML mapping:
   python tunert_midi.py monitor --input "Launchpad Pro Standalone"
+  python tunert_midi.py monitor --input ARIUS --input "Launchpad Pro Standalone"
   python tunert_midi.py listen mapping.yaml --check
   python tunert_midi.py listen mapping.yaml
 
@@ -28,6 +29,7 @@ Helper commands for measuring and MIDI learn:
 import argparse
 import contextlib
 import csv
+import json
 import queue
 import signal
 import sys
@@ -62,6 +64,21 @@ def normalize_root(text):
     return NOTE_ALIASES.get(t, str(text).strip())
 
 
+def match_names(wanted, names):
+    """Names equal to wanted (ignoring case), or else the names that contain it."""
+    exact = [n for n in names if n.lower() == wanted.lower()]
+    return exact or [n for n in names if wanted.lower() in n.lower()]
+
+
+def pick_inputs(wanted):
+    """Resolve each wanted input (part of a port name) to exactly one port, like pick_port."""
+    names = [pick_port(w, "input") for w in wanted or [None]]
+    twice = sorted({n for n in names if names.count(n) > 1})
+    if twice:
+        sys.exit(f"The inputs {wanted} name the same port more than once: {twice}.")
+    return names
+
+
 def pick_port(wanted, kind="output"):
     """Find a port by (part of) its name. Refuses to guess: ambiguous or missing names are an error."""
     names = mido.get_output_names() if kind == "output" else mido.get_input_names()
@@ -72,8 +89,7 @@ def pick_port(wanted, kind="output"):
         if kind == "input":
             sys.exit(f"Please choose a MIDI input with --input. Available: {names}")
         wanted = "IAC"  # default: the IAC bus SuperRack listens on
-    exact = [n for n in names if n.lower() == wanted.lower()]
-    matches = exact or [n for n in names if wanted.lower() in n.lower()]
+    matches = match_names(wanted, names)
     if not matches:
         sys.exit(f"No MIDI {kind} matches '{wanted}'. Choose one with {option}. Available: {names}")
     if len(matches) > 1:
@@ -372,8 +388,12 @@ def parse_trigger(raw, where):
     if kind not in TRIGGER_NUMBER:
         raise ValueError(f"{where}trigger type must be one of {', '.join(TRIGGER_NUMBER)}, got {kind!r}")
     number, value = TRIGGER_NUMBER[kind], TRIGGER_VALUE.get(kind)
-    check_keys(raw, {"type", "channel", number} | ({value} if value else set()), where, f" for {kind}")
+    check_keys(raw, {"type", "channel", "input", number} | ({value} if value else set()), where, f" for {kind}")
     trig = {"type": kind}
+    if "input" in raw:
+        if not isinstance(raw["input"], str) or not raw["input"].strip():
+            raise ValueError(f"{where}trigger input must be (part of) a port name, got {raw['input']!r}")
+        trig["input"] = raw["input"].strip()
     if "channel" in raw:
         trig["channel"] = check_int(raw["channel"], 1, 16, "channel", where) - 1
     if number not in raw:
@@ -384,7 +404,10 @@ def parse_trigger(raw, where):
     return trig
 
 
-def trigger_matches(trig, msg):
+def trigger_matches(trig, msg, port=None):
+    """Does msg (received on input port) match trig? A trigger with an input only reacts to that input."""
+    if "port" in trig and port != trig["port"]:
+        return False
     kind = msg.type
     if kind == "note_on" and msg.velocity == 0:
         kind = "note_off"  # note_on with velocity 0 is a note off
@@ -400,9 +423,11 @@ def trigger_matches(trig, msg):
     return True
 
 
-def triggers_overlap(a, b):
-    """True if some MIDI message would match both triggers."""
+def triggers_overlap(a, b, source):
+    """True if some MIDI message would match both triggers. source(trigger) names its input, None = any input."""
     if a["type"] != b["type"]:
+        return False
+    if source(a) and source(b) and source(a) != source(b):
         return False
     if "channel" in a and "channel" in b and a["channel"] != b["channel"]:
         return False
@@ -423,7 +448,17 @@ def describe_trigger(trig):
         if field in trig:
             lo, hi = trig[field]
             parts.append(f"{field} {lo}" if lo == hi else f"{field} {lo}-{hi}")
+    if "input" in trig:
+        parts.append(f"from {trig['input']}")
     return " ".join(parts)
+
+
+def warn_overlaps(mappings, source):
+    for j, later in enumerate(mappings):
+        earlier = next((m for m in mappings[:j] if triggers_overlap(m["trigger"], later["trigger"], source)), None)
+        if earlier:
+            print(f"Warning: '{later['name']}' overlaps with the trigger of '{earlier['name']}'. "
+                  "The first matching mapping wins, so it may never fire for some messages.")
 
 
 def _optional_channel(raw, where):
@@ -487,9 +522,15 @@ def load_mapping(path):
         if "scale" in defaults and "scale_value" in defaults:
             raise ValueError("defaults: use either scale or scale_value, not both")
         channel = check_int(data.get("channel", 1), 1, 16, "channel")
-        for key in ("input", "output"):
-            if data.get(key) is not None and (not isinstance(data[key], str) or not data[key].strip()):
-                raise ValueError(f"{key} must be a port name (text), got {data[key]!r}")
+        output = data.get("output")
+        if output is not None and (not isinstance(output, str) or not output.strip()):
+            raise ValueError(f"output must be a port name (text), got {output!r}")
+        inputs = data.get("input")
+        if isinstance(inputs, str):
+            inputs = [inputs]
+        if inputs is not None and (not isinstance(inputs, list) or not inputs
+                                   or not all(isinstance(n, str) and n.strip() for n in inputs)):
+            raise ValueError(f"input must be a port name or a list of port names, got {data['input']!r}")
         raw_mappings = data.get("mappings") or []
         if not isinstance(raw_mappings, list):
             raise ValueError("mappings must be a list (each entry starts with '- ')")
@@ -525,12 +566,8 @@ def load_mapping(path):
         sys.exit(f"{path} has errors:\n  " + "\n  ".join(errors))
     if not mappings:
         sys.exit(f"{path}: no mappings defined")
-    for j, later in enumerate(mappings):
-        earlier = next((m for m in mappings[:j] if triggers_overlap(m["trigger"], later["trigger"])), None)
-        if earlier:
-            print(f"Warning: '{later['name']}' overlaps with the trigger of '{earlier['name']}'. "
-                  "The first matching mapping wins, so it may never fire for some messages.")
-    return {"input": data.get("input"), "output": data.get("output"), "channel": channel, "mappings": mappings}
+    return {"inputs": inputs and [n.strip() for n in inputs], "output": output, "channel": channel,
+            "mappings": mappings}
 
 
 def describe_action(action, channel):
@@ -618,57 +655,80 @@ def log(text):
     print(f"{datetime.now():%H:%M:%S}  {text}")
 
 
-def incoming(port_name, stop):
-    """Yield incoming messages until stop is set.
+def incoming(names, stop):
+    """Yield (input name, message) from all inputs until stop is set, in the order the messages came in.
 
-    Blocks without polling. Twice a second it checks the stop flag and that the input still exists; if the device was
-    unplugged it says so once, waits for it to come back and reopens it.
+    Blocks without polling. Twice a second it checks the stop flag and that each input still exists; an unplugged
+    device is reported once and reopened when it comes back, while the other inputs keep working.
+    All port handling stays on this thread: CoreMIDI did not report a returning port to checks from other threads.
     """
     messages = queue.Queue()
-    open_failed = False
+    inputs = [_Input(name, messages) for name in names]
+    try:
+        next_check = 0.0
+        while not stop.is_set():
+            if time.monotonic() >= next_check:
+                present = port_names("input")
+                for inp in inputs:
+                    inp.check(present.count(inp.name))
+                next_check = time.monotonic() + PORT_CHECK_SECONDS
+            try:
+                yield messages.get(timeout=max(0.0, next_check - time.monotonic()))
+            except queue.Empty:
+                pass
+    finally:
+        for inp in inputs:
+            inp.close()
 
-    def received(msg):
+
+class _Input:
+    """One input of incoming(): opens the port, notices when it disappears or a same-named port turns up."""
+
+    def __init__(self, name, messages):
+        self.name, self.messages = name, messages
+        self.port, self.count, self.missing, self.open_failed = None, 0, False, False
+
+    def received(self, msg):
         # Stamp the arrival time: listen uses it to recognise presses that came in while an action was running.
-        messages.put(msg.copy(time=time.monotonic()))
+        self.messages.put((self.name, msg.copy(time=time.monotonic())))
 
-    while not stop.is_set():
-        if not port_exists(port_name, "input"):
-            log(f"Input '{port_name}' disappeared. Waiting for it to come back ...")
-            while not stop.is_set() and not port_exists(port_name, "input"):
-                stop.wait(1)
-            if stop.is_set():
-                break
-            log(f"Input '{port_name}' is back.")
+    def close(self):
+        if self.port:
+            self.port.close()
+            self.port = None
+
+    def check(self, present):
+        """present: how many inputs with this name exist right now."""
+        if self.port:
+            if present > self.count:
+                log(f"Warning: another input called '{self.name}' appeared. Both look the same, so this one "
+                    "may no longer be the device you mean.")
+            elif 0 < present < self.count:
+                # One of several same-named ports is gone, maybe the one that is open: reopen by name.
+                log(f"One of the inputs called '{self.name}' disappeared; reopening.")
+                self.close()
+            self.count = present
+            if not present:
+                self.close()
+        if self.port:
+            return
+        if not present:
+            if not self.missing:
+                log(f"Input '{self.name}' disappeared. Waiting for it to come back ...")
+                self.missing = True
+            return
+        if self.missing:
+            log(f"Input '{self.name}' is back.")
+            self.missing = False
         try:
-            port = mido.open_input(port_name, callback=received)
+            self.port = mido.open_input(self.name, callback=self.received)
         except Exception as e:  # listed again, but not ready yet (e.g. a slowly enumerating USB device)
-            if not open_failed:
-                log(f"Input '{port_name}' cannot be opened yet ({e}); retrying every second ...")
-                open_failed = True
-            stop.wait(1)
-            continue
-        open_failed = False
-        with port:
-            last_check = time.monotonic()
-            count = port_names("input").count(port_name)
-            while not stop.is_set():
-                try:
-                    yield messages.get(timeout=0.5)
-                except queue.Empty:
-                    pass
-                if time.monotonic() - last_check >= PORT_CHECK_SECONDS:
-                    last_check = time.monotonic()
-                    present = port_names("input").count(port_name)
-                    if present > count:
-                        log(f"Warning: another input called '{port_name}' appeared. Both look the same, so this one "
-                            "may no longer be the device you mean.")
-                    elif 0 < present < count:
-                        # One of several same-named ports is gone, maybe the one that is open: reopen by name.
-                        log(f"One of the inputs called '{port_name}' disappeared; reopening.")
-                        break
-                    count = present
-                    if not present:
-                        break
+            if not self.open_failed:
+                log(f"Input '{self.name}' cannot be opened yet ({e}); retrying ...")
+                self.open_failed = True
+            return
+        self.open_failed = False
+        self.count = present
 
 
 class ReconnectingOutput:
@@ -750,7 +810,8 @@ def check_no_feedback(mapping, channel, port_name):
         return any(kind == trig["type"] and trig.get("channel", ch) == ch and lo <= n <= hi
                    and (value is None or vlo <= value <= vhi) for kind, ch, n, value in sent)
 
-    loops = [m["name"] for m in mapping["mappings"] if could_loop(m["trigger"])]
+    loops = [m["name"] for m in mapping["mappings"]
+             if m["trigger"].get("port", port_name) == port_name and could_loop(m["trigger"])]
     if loops:
         sys.exit(f"Input and output are both '{port_name}', so the messages sent here come back in.\n"
                  f"These triggers match messages the script sends and could fire themselves again and again: "
@@ -767,32 +828,50 @@ def cmd_listen(args):
               + " | ".join(describe_action(a, channel) for a in m["actions"])
               + (f"   [{m['name']}]" if m["name"] != describe_trigger(m["trigger"]) else ""))
     if args.check:
+        # No ports are looked up here, so inputs count as the same if their names are written the same.
+        warn_overlaps(mapping["mappings"], lambda trig: trig.get("input", "").lower() or None)
         print("Mapping OK.")
         return
 
-    in_name = pick_port(args.input or mapping["input"], "input")
+    in_names = pick_inputs(args.input or mapping["inputs"])
+    errors = []
+    for m in mapping["mappings"]:
+        wanted = m["trigger"].get("input")
+        if wanted is None:
+            continue
+        hits = match_names(wanted, in_names)
+        if len(hits) == 1:
+            m["trigger"]["port"] = hits[0]
+        else:
+            errors.append(f"'{m['name']}': input '{wanted}' matches {'several' if hits else 'none'} of them")
+    if errors:
+        sys.exit(f"A trigger input must match exactly one of the inputs listened to ({in_names}):\n  "
+                 + "\n  ".join(errors))
+    warn_overlaps(mapping["mappings"], lambda trig: trig.get("port"))
     out_name = None if args.dry_run else pick_port(args.port or mapping["output"])
-    if in_name == out_name:
-        check_no_feedback(mapping, channel, in_name)
+    if out_name in in_names:
+        check_no_feedback(mapping, channel, out_name)
     try:
         output = contextlib.nullcontext() if args.dry_run else ReconnectingOutput(out_name)
     except Exception as e:
         sys.exit(f"Cannot open output '{out_name}': {e}")
     target = "nothing (dry run)" if args.dry_run else f"'{out_name}' (SuperRack channel {channel})"
-    print(f"Listening on '{in_name}', sending to {target}. Ctrl+C stops.")
+    print(f"Listening on {', '.join(repr(n) for n in in_names)}, sending to {target}. Ctrl+C stops.")
+    # With several inputs, say which one a message came from.
+    origin = (lambda port: f"  [{port}]") if len(in_names) > 1 else (lambda port: "")
     last_match, busy_until = None, 0.0
     with stop_requested() as stop, output as out:
-        for msg in incoming(in_name, stop):
-            match = next((m for m in mapping["mappings"] if trigger_matches(m["trigger"], msg)), None)
+        for port, msg in incoming(in_names, stop):
+            match = next((m for m in mapping["mappings"] if trigger_matches(m["trigger"], msg, port)), None)
             if not match:
                 if args.verbose and msg.type not in REALTIME_TYPES:
-                    log(f"(no mapping) {msg.copy(time=0)}")
+                    log(f"(no mapping) {msg.copy(time=0)}{origin(port)}")
                 continue
             if match is last_match and msg.time < busy_until:
                 # Pressed again while its own action was still running: the result would be the same, only later.
                 log(f"{match['name']}: repeated press during the running action, ignored")
                 continue
-            log(match["name"])
+            log(match["name"] + origin(port))
             if out and not out.ready():
                 print(f"    skipped: output '{out_name}' is missing")
                 continue
@@ -813,22 +892,26 @@ def cmd_listen(args):
 
 def cmd_monitor(args):
     """Print incoming messages in the trigger format used by mapping files."""
-    in_name = pick_port(args.input, "input")
-    print(f"Listening on '{in_name}'. Copy a line into the mapping file as 'trigger:'. Ctrl+C stops.")
+    in_names = pick_inputs(args.input)
+    print(f"Listening on {', '.join(repr(n) for n in in_names)}. Copy a line into the mapping file as 'trigger:'. "
+          "Ctrl+C stops.")
     with stop_requested() as stop:
-        for msg in incoming(in_name, stop):
+        for port, msg in incoming(in_names, stop):
             if msg.type in REALTIME_TYPES:
                 continue
+            # With several inputs, the line names its input, so the trigger only reacts to that device.
+            source = f", input: {json.dumps(port, ensure_ascii=False)}" if len(in_names) > 1 else ""
             ch = getattr(msg, "channel", None)
             if msg.type in ("note_on", "note_off"):
                 kind = "note_off" if msg.type == "note_off" or msg.velocity == 0 else "note_on"
-                print(f"{{type: {kind}, channel: {ch + 1}, note: {msg.note}}}   # velocity {msg.velocity}")
+                print(f"{{type: {kind}, channel: {ch + 1}, note: {msg.note}{source}}}   # velocity {msg.velocity}")
             elif msg.type == "control_change":
-                print(f"{{type: control_change, channel: {ch + 1}, control: {msg.control}, value: {msg.value}}}")
+                print(f"{{type: control_change, channel: {ch + 1}, control: {msg.control}, value: {msg.value}"
+                      f"{source}}}")
             elif msg.type == "program_change":
-                print(f"{{type: program_change, channel: {ch + 1}, program: {msg.program}}}")
+                print(f"{{type: program_change, channel: {ch + 1}, program: {msg.program}{source}}}")
             else:
-                print(f"# {msg.copy(time=0)}   (not usable as trigger)")
+                print(f"# {msg.copy(time=0)}   (not usable as trigger){'  [' + port + ']' if source else ''}")
     print("Stopped.")
 
 
@@ -965,7 +1048,8 @@ def main():
 
     s = sub.add_parser("listen", help="react to incoming MIDI messages with actions from a YAML mapping")
     s.add_argument("mapping", help="YAML mapping file (see mapping.example.yaml)")
-    s.add_argument("--input", help="MIDI input, part of the port name (overrides 'input:' in the file)")
+    s.add_argument("--input", action="append",
+                   help="MIDI input, part of the port name; repeat for several (overrides 'input:' in the file)")
     s.add_argument("--port", help="output to SuperRack (overrides 'output:' in the file)")
     s.add_argument("--channel", type=int_range(1, 16), metavar="1-16",
                    help="MIDI channel of the SuperRack mapping (overrides 'channel:' in the file)")
@@ -975,7 +1059,7 @@ def main():
     s.set_defaults(func=cmd_listen)
 
     s = sub.add_parser("monitor", help="print incoming MIDI messages in trigger format")
-    s.add_argument("--input", help="MIDI input, part of the port name")
+    s.add_argument("--input", action="append", help="MIDI input, part of the port name; repeat for several")
     s.set_defaults(func=cmd_monitor)
 
     s = sub.add_parser("send", parents=[outp, ccp], help="send a single CC value")
