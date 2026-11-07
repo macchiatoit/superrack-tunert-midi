@@ -28,6 +28,8 @@ offline, die Parameter reagieren im Plugin aber trotzdem.
 - Das Python-Skript [`tunert_midi.py`](tunert_midi.py) erledigt alles in einem Aufruf:
   `key D --scale harmonic-minor --hot-plugin 2 --send-to-all`.
 - Mit `listen` reagiert das Skript auf einen MIDI-Controller (Pads, Fussschalter, Program Change), gesteuert über ein YAML-Mapping.
+- Auch eine **Behringer WING** kann Eingang sein (OSC): Die Wahl eines Kanals auf der WING kann z. B. dessen Rack in
+  SuperRack wählen.
 
 ## Einrichtung: MIDI Controller in SuperRack
 
@@ -373,17 +375,19 @@ mappings:
 
 | Trigger-Feld | Bedeutung |
 |---|---|
-| `type` | `note_on`, `note_off`, `control_change` oder `program_change` |
+| `type` | `note_on`, `note_off`, `control_change` oder `program_change`; `channel_select` für eine WING (siehe unten) |
 | `channel` | 1–16; weglassen = jeder Kanal |
 | `note` / `control` / `program` | Zahl 0–127 oder Bereich wie `[60, 72]` |
 | `velocity` (Noten) / `value` (CC) | optional, Zahl oder Bereich, z. B. `value: [64, 127]` für „Fader in der oberen Hälfte“ |
 | `input` | optional, nur bei mehreren Eingängen: nur auf Nachrichten von diesem Eingang reagieren (Teil des Portnamens) |
+| `strip` | nur `channel_select`: WING-Kanalzug wie `ch1` oder `aux2`, oder ein Bereich wie `[ch1, ch8]` |
 
 Ein `note_on` mit Velocity 0 zählt als `note_off`. Das Loslassen eines Pads löst also kein `note_on`-Mapping aus.
 
 | Aktion | Beispiel | Bedeutung |
 |---|---|---|
 | key | `{key: D, scale: dorian, user_key: 2, send_to_all: true}` | wie der Befehl `key`; alle seine Optionen, mit `_` statt `-` |
+| rack | `{rack: 17}` | Rack 17 wählen, am schnellsten mit `rack_anchors` (siehe Abschnitt zur WING unten) |
 | cc | `{cc: 20, value: 127, channel: 1}` | einen einzelnen CC an SuperRack senden |
 | snapshot | `{snapshot: 3}` | SuperRack-Snapshot per Program Change abrufen (braucht **Follow Prg. Changes**, siehe oben) |
 | wait | `{wait: 0.5}` | Pause in Sekunden |
@@ -423,6 +427,7 @@ Eingang, damit sich zwei Folgen auf dem Weg zu SuperRack nie vermischen.
 | `--dry-run` | lauschen, aber nur anzeigen, was gesendet würde |
 | `--verbose` | auch Nachrichten ohne Mapping anzeigen (ohne MIDI-Clock und Active Sensing) |
 | `--input`, `--port`, `--channel` | überschreiben `input`, `output`, `channel` aus der Datei; `--input` mehrfach für mehrere Eingänge |
+| `--wing IP` | überschreibt `host` im Abschnitt `wing:` (siehe Abschnitt zur WING unten) |
 
 Fehler in der Datei werden mit Mapping-Nummer und Name gemeldet, z. B.
 `mapping 2 (Song 2), action 1: unknown scale 'dorain'`. Auch Typen werden geprüft: `send_to_all: "false"` (Text statt
@@ -473,6 +478,86 @@ nicht belegt, „·“ heisst, diese Taste gibt es auf einem 88-Tasten-Piano nic
 | 7 (108) | – | · | · | · | · | · | · | · | · | · | · | · |
 
 Die Chromatic-Oktave setzt bei allen 12 Tasten Chromatic: Dort sind alle Töne erlaubt, der Grundton hat keine Wirkung.
+
+### Eine Behringer WING als Eingang (`mapping.wing.yaml`)
+
+`listen` kann eine Behringer WING als Eingang nutzen: Die Wahl eines Kanalzugs auf der WING ist ein Trigger wie ein
+Pad-Druck, und sein Mapping kann alles auslösen, typischerweise die Wahl des passenden Racks in SuperRack. Das Skript
+fragt die WING zehnmal pro Sekunde per OSC (UDP-Port 2223) nach dem gewählten Kanalzug. Ein Abo nutzt es nicht: Die
+WING führt nur ein Abo gleichzeitig, und es zu übernehmen würde andere Programme abhängen, die es nutzen.
+
+```bash
+.venv/bin/python tunert_midi.py monitor --wing 192.168.1.71      # zeigt jede Auswahl als Trigger-Zeile
+.venv/bin/python tunert_midi.py listen mapping.wing.yaml --check
+.venv/bin/python tunert_midi.py listen mapping.wing.yaml
+```
+
+```yaml
+wing:
+  host: 192.168.1.71        # IP der WING (Setup > Network); listen --wing IP überschreibt sie
+  name: WING                # ihr Name in input: und in Triggern (Standard: WING)
+
+input: [WING, Launchpad Pro Standalone]
+rack_anchors: {4: 13, 12: 14, 20: 15, 28: 16}   # Rack: User Key mit „View Rack“
+
+mappings:
+  - name: Kick In
+    trigger: {type: channel_select, strip: ch1}
+    rack: 1
+  - name: Lead vocal - rack and key
+    trigger: {type: channel_select, strip: ch17}
+    actions:
+      - {rack: 17}
+      - {key: E, scale: natural-minor, hot_plugin: 2}
+  - name: Pad - rack 9
+    trigger: {type: note_on, note: 36, input: Launchpad}
+    rack: 9
+```
+
+| Feld in `wing:` | Bedeutung |
+|---|---|
+| `host` | IP-Adresse der WING (Pflicht) |
+| `name` | Name der WING in `input:` und im `input:` von Triggern (Standard `WING`). Ein exakter Treffer geht vor MIDI-Ports, so bleiben die eigenen USB-MIDI-Ports der WING („WING …“) als MIDI-Eingänge nutzbar |
+| `poll`, `port` | wie oft die WING gefragt wird (Standard 0,1 s) und ihr OSC-Port (Standard 2223) |
+
+Der Trigger `{type: channel_select, strip: ch1}` nimmt `ch1`–`ch40`, `aux1`–`aux8`, `bus1`–`bus16`, `main1`–`main4`,
+`mtx1`–`mtx8` oder einen Bereich in WING-Reihenfolge wie `strip: [ch1, ch8]`. `input:` braucht es bei einer einzigen
+WING nicht. Fehlt `input:` in der Datei, hört `listen` nur auf die WING, wenn alle Trigger `channel_select` sind. Ein
+MIDI-Trigger mit `input: WING` wird abgelehnt, weil die WING nur `channel_select` sendet.
+
+Die erste beim Start gelesene Auswahl dient nur als Ausgangspunkt; danach ist jede Änderung ein Trigger. Werden
+mehrere Kanalzüge schnell hintereinander gewählt (z. B. beim Durchscrollen), wird nur der neueste mit Mapping
+ausgeführt; die Wahl eines nicht zugeordneten Kanalzugs (z. B. eines Busses) verwirft keinen wartenden zugeordneten. Alle
+Trigger, von der WING wie von MIDI, laufen nacheinander und vermischen sich nie. Antwortet die WING nicht, meldet
+`listen` das einmal und macht weiter, sobald sie wieder da ist.
+
+**Die Aktion `rack` und Fixpunkte.** `{rack: N}` wählt Rack N, von jedem Trigger aus: einer WING-Auswahl, einem Pad,
+einer Taste. SuperRack kann Racks nur mit PREV/NEXT RACK durchschalten und meldet nicht, welches Rack gewählt ist.
+User Keys können ein Rack aber direkt anspringen: SETUP → User Key Assignments → Navigation → View Rack → Rack N
+(auch Racks ohne Plugins). `rack_anchors` listet sie auf. Eine Rack-Aktion drückt den nächstgelegenen und danach
+höchstens 4 × NEXT oder PREV RACK (mit Fixpunkten auf 4, 12, 20 und 28 bei 32 Racks). Jeder Wechsel ist absolut und
+landet deshalb auch dann richtig, wenn vorher in SuperRack ein Rack angeklickt wurde. „View Rack“ schaltet SuperRack
+zudem auf die RACK-Seite. Ohne Fixpunkte geht eine Rack-Aktion erst auf Rack 1 (64 × PREV RACK, mehrere Sekunden).
+Option `pause`: Sekunden nach jeder Nachricht (Standard 0,05).
+`rack_anchors` beschleunigen auch Tonart-Aktionen mit `rack:` (z. B. `{key: E, rack: 17}`), die dann ebenfalls auf
+die RACK-Seite schalten und mindestens 0,05 s pro Nachricht nutzen (ein längeres `nav_pause` gilt). Wie bisher setzt eine solche Aktion das Plugin, das in diesem Rack gewählt ist; das sollte
+also das Tune RT sein. Beide Wege wählen dasselbe Plugin (geprüft in drei Racks).
+
+![User Key auf Navigation → View Rack](images/user-key-view-rack.png)
+
+Die WING nummeriert ihre Kanalzüge 1–40 für die Kanäle, danach Aux 1–8, Bus 1–16, Main 1–4 und Matrix 1–8
+(`/$ctl/$stat/selidx`; gemessen für Kanäle, Aux und einen Bus).
+
+Getestet mit einer WING Compact (Firmware 3.1) und SuperRack mit 32 Racks: Die Abfrage des gewählten Kanalzugs
+antwortete übers Netzwerk innerhalb von 1 ms (850 Abfragen, keine verloren). Mit Fixpunkten auf 4, 12, 20 und 28
+wurde jedes Rack 1–32 in zufälliger Reihenfolge getroffen: 128 von 128 bei 0,02 s und 96 von 96 bei 0,01 s pro
+Nachricht; ganz ohne Pause gingen Nachrichten verloren. Die Rack-Aktion nimmt 0,05 s. Über `listen` wählte eine
+simulierte WING alle 32 Racks richtig, Pads wählten ebenfalls Racks, und beim schnellen Durchscrollen (8 Selects im
+Abstand von 0,12 s) landete SuperRack immer auf dem letzten. Live an der WING wählten die Kanäle 1–24 und Sprünge hin
+und her immer das richtige Rack, auch nach Klicks in SuperRack.
+
+Unter macOS braucht das Terminal-Programm Zugriff aufs lokale Netzwerk (Systemeinstellungen → Datenschutz &
+Sicherheit → Lokales Netzwerk); ohne meldet `listen` „No route to host“.
 
 ## Messdaten
 

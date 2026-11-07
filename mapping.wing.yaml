@@ -1,0 +1,69 @@
+# A Behringer WING as input: selecting a channel strip on the WING selects its rack in SuperRack.
+#   python tunert_midi.py listen mapping.wing.yaml
+#
+# See which strip the WING reports, as a ready-to-copy trigger:
+#   python tunert_midi.py monitor --wing 192.168.1.71
+#
+# The script asks the WING (OSC, UDP port 2223) for the selected channel strip ten times a second.
+
+output: IAC
+channel: 1
+
+wing:
+  host: 192.168.1.71        # IP address of the WING (on the WING: Setup > Network); listen --wing IP overrides it
+  name: WING                # how input: and triggers refer to it (default: WING). An exact match wins over MIDI
+                            # ports, so the WING's own USB MIDI ports ("WING ...") stay usable as MIDI inputs.
+
+# Inputs: the WING, and MIDI ports if wanted, e.g. input: [WING, Launchpad Pro Standalone].
+input: [WING]
+
+# Anchors for "rack:" actions: User Keys set to "Navigation > View Rack > rack N" in SuperRack
+# (SETUP > User Key Assignments). A rack action presses the nearest one and steps from there with NEXT/PREV RACK:
+# at most 4 steps with these four (32 racks), quick, and right even after a click in SuperRack.
+# "View Rack" also switches SuperRack to the RACK page. Without anchors, a rack action first goes to rack 1
+# with 64 x PREV RACK, which takes several seconds.
+rack_anchors: {4: 13, 12: 14, 20: 15, 28: 16}   # rack: User Key
+
+# Trigger: {type: channel_select, strip: ch1}; strips are ch1-ch40, aux1-aux8, bus1-bus16, main1-main4, mtx1-mtx8,
+# or a range like [ch1, ch8]. Action {rack: N} selects rack N (option pause: seconds per message, default 0.05).
+# Any other action works too, e.g. a key change when a singer's channel is selected:
+#   - name: ch17 - rack 17 and its key
+#     trigger: {type: channel_select, strip: ch17}
+#     actions:
+#       - {rack: 17}
+#       - {key: E, scale: natural-minor, hot_plugin: 2}
+mappings:
+  - {name: ch1 - rack 1, trigger: {type: channel_select, strip: ch1}, rack: 1}
+  - {name: ch2 - rack 2, trigger: {type: channel_select, strip: ch2}, rack: 2}
+  - {name: ch3 - rack 3, trigger: {type: channel_select, strip: ch3}, rack: 3}
+  - {name: ch4 - rack 4, trigger: {type: channel_select, strip: ch4}, rack: 4}
+  - {name: ch5 - rack 5, trigger: {type: channel_select, strip: ch5}, rack: 5}
+  - {name: ch6 - rack 6, trigger: {type: channel_select, strip: ch6}, rack: 6}
+  - {name: ch7 - rack 7, trigger: {type: channel_select, strip: ch7}, rack: 7}
+  - {name: ch8 - rack 8, trigger: {type: channel_select, strip: ch8}, rack: 8}
+  - {name: ch9 - rack 9, trigger: {type: channel_select, strip: ch9}, rack: 9}
+  - {name: ch10 - rack 10, trigger: {type: channel_select, strip: ch10}, rack: 10}
+  - {name: ch11 - rack 11, trigger: {type: channel_select, strip: ch11}, rack: 11}
+  - {name: ch12 - rack 12, trigger: {type: channel_select, strip: ch12}, rack: 12}
+  - {name: ch13 - rack 13, trigger: {type: channel_select, strip: ch13}, rack: 13}
+  - {name: ch14 - rack 14, trigger: {type: channel_select, strip: ch14}, rack: 14}
+  - {name: ch15 - rack 15, trigger: {type: channel_select, strip: ch15}, rack: 15}
+  - {name: ch16 - rack 16, trigger: {type: channel_select, strip: ch16}, rack: 16}
+  - {name: ch17 - rack 17, trigger: {type: channel_select, strip: ch17}, rack: 17}
+  - {name: ch18 - rack 18, trigger: {type: channel_select, strip: ch18}, rack: 18}
+  - {name: ch19 - rack 19, trigger: {type: channel_select, strip: ch19}, rack: 19}
+  - {name: ch20 - rack 20, trigger: {type: channel_select, strip: ch20}, rack: 20}
+  - {name: ch21 - rack 21, trigger: {type: channel_select, strip: ch21}, rack: 21}
+  - {name: ch22 - rack 22, trigger: {type: channel_select, strip: ch22}, rack: 22}
+  - {name: ch23 - rack 23, trigger: {type: channel_select, strip: ch23}, rack: 23}
+  - {name: ch24 - rack 24, trigger: {type: channel_select, strip: ch24}, rack: 24}
+  - {name: ch25 - rack 25, trigger: {type: channel_select, strip: ch25}, rack: 25}
+  - {name: ch26 - rack 26, trigger: {type: channel_select, strip: ch26}, rack: 26}
+  - {name: ch27 - rack 27, trigger: {type: channel_select, strip: ch27}, rack: 27}
+  - {name: ch28 - rack 28, trigger: {type: channel_select, strip: ch28}, rack: 28}
+  - {name: ch29 - rack 29, trigger: {type: channel_select, strip: ch29}, rack: 29}
+  - {name: ch30 - rack 30, trigger: {type: channel_select, strip: ch30}, rack: 30}
+  - {name: ch31 - rack 31, trigger: {type: channel_select, strip: ch31}, rack: 31}
+  - {name: ch32 - rack 32, trigger: {type: channel_select, strip: ch32}, rack: 32}
+  # ch33-ch40 and aux1-aux8: no rack in a 32-rack session. Assign them like this:
+  # - {name: aux1 - rack 30, trigger: {type: channel_select, strip: aux1}, rack: 30}

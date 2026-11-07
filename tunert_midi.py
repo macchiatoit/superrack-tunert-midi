@@ -18,6 +18,10 @@ React to incoming MIDI (e.g. a pad or a program change) with a YAML mapping:
   python tunert_midi.py listen mapping.yaml --check
   python tunert_midi.py listen mapping.yaml
 
+A Behringer WING as input: react to the selected channel strip (e.g. select the channel's rack in SuperRack):
+  python tunert_midi.py monitor --wing 192.168.1.71
+  python tunert_midi.py listen mapping.wing.yaml
+
 Helper commands for measuring and MIDI learn:
   python tunert_midi.py send 64 --cc 27
   python tunert_midi.py learn --cc 27
@@ -32,6 +36,8 @@ import csv
 import json
 import queue
 import signal
+import socket
+import struct
 import sys
 import threading
 import time
@@ -300,7 +306,21 @@ def run_key(out, channel, root_text, opts):
 
     # Select the target plugin. The Plugin Controls only jump to page 1 on an actual rack or plugin
     # change, so at least one rack change is always forced.
-    if opts["rack"]:
+    if opts["rack"] and opts.get("anchors"):
+        # Nearest anchor (a User Key set to "View Rack") plus a few NEXT/PREV steps, see rack_route. If the target is
+        # the anchor itself and was already selected, the rack did not change: step away and back for the page reset.
+        # At least the rack action's pause, so the anchor route never runs faster than the tested, chosen speed;
+        # a longer nav_pause (e.g. for a slow network MIDI link) still applies.
+        nav_pause = max(opts["nav_pause"], RACK_PAUSE)
+        route, _ = rack_route(opts)
+        for control, times in route:
+            press(control, times, nav_pause)
+        if len(route) == 1:
+            first, back = ((opts["prev_rack_cc"], opts["next_rack_cc"]) if opts["rack"] > 1
+                           else (opts["next_rack_cc"], opts["prev_rack_cc"]))
+            press(first, 1, nav_pause)
+            press(back, 1, nav_pause)
+    elif opts["rack"]:
         # PREV RACK stops at rack 1; from there NEXT RACK counts every rack individually and stops at the last one.
         # NEXT x (N-1) never overshoots, so it also works for the last rack. Only rack 1 needs an extra NEXT + PREV:
         # if we already were in rack 1, PREV x max_racks did not change the rack and the page would not reset.
@@ -357,8 +377,9 @@ def cmd_key(args):
 
 # --- listen: react to incoming MIDI with a YAML mapping ---------------------------------------
 
-# Trigger type -> name of the number field
-TRIGGER_NUMBER = {"note_on": "note", "note_off": "note", "control_change": "control", "program_change": "program"}
+# Trigger type -> name of the number field (channel_select: the channel strip selected on a WING)
+TRIGGER_NUMBER = {"note_on": "note", "note_off": "note", "control_change": "control", "program_change": "program",
+                  "channel_select": "strip"}
 # Trigger type -> name of the optional value field
 TRIGGER_VALUE = {"note_on": "velocity", "note_off": "velocity", "control_change": "value"}
 
@@ -376,6 +397,25 @@ def _range(value, field, where):
     return v, v
 
 
+def _strip_range(value, where):
+    """A WING strip name (ch1, aux2, bus5, main1, mtx3) or [first, last] -> (min, max) as strip numbers 1-76."""
+    def number(name):
+        key = str(name).strip().lower().replace(" ", "")
+        if isinstance(name, bool) or key not in WING_ALL_STRIPS:
+            raise ValueError(f"{where}strip must be a WING channel strip like ch1, aux2, bus5, main1 or mtx3 "
+                             f"(or [first, last]), got {name!r}")
+        return WING_ALL_STRIPS.index(key) + 1
+    if isinstance(value, list) and len(value) == 2:
+        lo, hi = number(value[0]), number(value[1])
+        if lo > hi:
+            raise ValueError(f"{where}strip range must be [first, last] in WING order (ch, aux, bus, main, mtx), "
+                             f"got {value!r}")
+        return lo, hi
+    if isinstance(value, list):
+        raise ValueError(f"{where}strip must be a channel strip or [first, last], got {value!r}")
+    return number(value), number(value)
+
+
 def _normalize_keys(raw):
     return {str(k).replace("-", "_"): v for k, v in raw.items()}
 
@@ -388,7 +428,9 @@ def parse_trigger(raw, where):
     if kind not in TRIGGER_NUMBER:
         raise ValueError(f"{where}trigger type must be one of {', '.join(TRIGGER_NUMBER)}, got {kind!r}")
     number, value = TRIGGER_NUMBER[kind], TRIGGER_VALUE.get(kind)
-    check_keys(raw, {"type", "channel", "input", number} | ({value} if value else set()), where, f" for {kind}")
+    midi = kind != "channel_select"  # a WING strip has no MIDI channel
+    check_keys(raw, {"type", "input", number} | ({"channel"} if midi else set()) | ({value} if value else set()),
+               where, f" for {kind}")
     trig = {"type": kind}
     if "input" in raw:
         if not isinstance(raw["input"], str) or not raw["input"].strip():
@@ -398,7 +440,7 @@ def parse_trigger(raw, where):
         trig["channel"] = check_int(raw["channel"], 1, 16, "channel", where) - 1
     if number not in raw:
         raise ValueError(f"{where}trigger needs '{number}'")
-    trig[number] = _range(raw[number], number, where)
+    trig[number] = _range(raw[number], number, where) if midi else _strip_range(raw[number], where)
     if value and value in raw:
         trig[value] = _range(raw[value], value, where)
     return trig
@@ -448,6 +490,9 @@ def describe_trigger(trig):
         if field in trig:
             lo, hi = trig[field]
             parts.append(f"{field} {lo}" if lo == hi else f"{field} {lo}-{hi}")
+    if "strip" in trig:
+        lo, hi = (WING_ALL_STRIPS[n - 1] for n in trig["strip"])
+        parts.append(lo if lo == hi else f"{lo}-{hi}")
     if "input" in trig:
         parts.append(f"from {trig['input']}")
     return " ".join(parts)
@@ -465,7 +510,11 @@ def _optional_channel(raw, where):
     return None if raw.get("channel") is None else check_int(raw["channel"], 1, 16, "channel", where)
 
 
-def parse_action(raw, defaults, where):
+RACK_NAV_KEYS = ("prev_rack_cc", "next_rack_cc", "user_key_cc", "max_racks")
+RACK_PAUSE = 0.05  # seconds per message on the anchor route (0.01 and 0.02 also worked in tests; 0.05 for margin)
+
+
+def parse_action(raw, defaults, where, anchors=None):
     if not isinstance(raw, dict):
         raise ValueError(f"{where}action must be a mapping, got {raw!r}")
     raw = _normalize_keys(raw)
@@ -482,9 +531,23 @@ def parse_action(raw, defaults, where):
         opts.update({k: v for k, v in raw.items() if k != "key"})
         try:
             resolve_key(raw["key"], opts)
+            if opts["rack"] and anchors:
+                check_anchors(anchors, opts["user_key_cc"], opts["max_racks"])
         except ValueError as e:
             raise ValueError(f"{where}{e}") from None
+        opts["anchors"] = anchors or {}  # rack: then goes through the nearest anchor, like the rack action
         return {"do": "key", "root": raw["key"], "opts": opts}
+    if "rack" in raw:
+        # Select a rack on its own (in a key action, rack: selects the rack of the Tune RT to set instead).
+        check_keys(raw, {"rack", "pause", *RACK_NAV_KEYS}, where, " for rack")
+        nav = {k: raw.get(k, defaults.get(k, KEY_DEFAULTS[k])) for k in RACK_NAV_KEYS}
+        for k in ("prev_rack_cc", "next_rack_cc", "user_key_cc"):
+            check_int(nav[k], 0, 127, k, where)
+        check_int(nav["max_racks"], 1, 1024, "max_racks", where)
+        check_anchors(anchors or {}, nav["user_key_cc"], nav["max_racks"], where)
+        nav.update(rack=check_int(raw["rack"], 1, nav["max_racks"], "rack", where), anchors=anchors or {},
+                   pause=float(check_number(raw.get("pause", RACK_PAUSE), 0, 1, "pause", where)))
+        return {"do": "rack", "opts": nav}
     if "cc" in raw:
         check_keys(raw, {"cc", "value", "channel"}, where, " for cc")
         return {"do": "cc", "cc": check_int(raw["cc"], 0, 127, "cc", where),
@@ -497,7 +560,7 @@ def parse_action(raw, defaults, where):
     if "wait" in raw:
         check_keys(raw, {"wait"}, where, " for wait")
         return {"do": "wait", "seconds": float(check_number(raw["wait"], 0, 3600, "wait", where))}
-    raise ValueError(f"{where}action needs one of key, cc, snapshot, wait")
+    raise ValueError(f"{where}action needs one of key, rack, cc, snapshot, wait")
 
 
 def load_mapping(path):
@@ -513,7 +576,8 @@ def load_mapping(path):
     try:
         if not isinstance(data, dict):
             raise ValueError("top level must be a mapping with 'mappings:'")
-        check_keys(data, {"input", "output", "channel", "defaults", "mappings"}, "", " at top level")
+        check_keys(data, {"input", "output", "channel", "defaults", "mappings", "wing", "rack_anchors"}, "",
+                   " at top level")
         raw_defaults = data.get("defaults") or {}
         if not isinstance(raw_defaults, dict):
             raise ValueError(f"defaults must be a mapping like {{hot_plugin: 1}}, got {raw_defaults!r}")
@@ -534,6 +598,12 @@ def load_mapping(path):
         raw_mappings = data.get("mappings") or []
         if not isinstance(raw_mappings, list):
             raise ValueError("mappings must be a list (each entry starts with '- ')")
+        wing = None if data.get("wing") is None else parse_wing(data["wing"])
+        anchors = parse_anchors(data.get("rack_anchors") or {})
+        check_anchors(anchors, check_int(defaults.get("user_key_cc", KEY_DEFAULTS["user_key_cc"]), 0, 127,
+                                         "user_key_cc", "defaults: "),
+                      check_int(defaults.get("max_racks", KEY_DEFAULTS["max_racks"]), 1, 1024, "max_racks",
+                                "defaults: "))
     except ValueError as e:
         sys.exit(f"{path}: {e}")
 
@@ -556,7 +626,9 @@ def load_mapping(path):
                     raise ValueError(f"{where}actions must be a non-empty list")
             else:
                 raw_actions = [{k: v for k, v in entry.items() if k not in ("name", "trigger")}]
-            actions = [parse_action(a, defaults, f"{where[:-2]}, action {j}: ")
+            if trig["type"] == "channel_select" and not wing:
+                raise ValueError(f"{where}channel_select needs a 'wing:' section with the WING's address")
+            actions = [parse_action(a, defaults, f"{where[:-2]}, action {j}: ", anchors)
                        for j, a in enumerate(raw_actions, 1)]
             mappings.append({"name": str(name) if name else describe_trigger(trig), "trigger": trig,
                              "actions": actions})
@@ -567,7 +639,7 @@ def load_mapping(path):
     if not mappings:
         sys.exit(f"{path}: no mappings defined")
     return {"inputs": inputs and [n.strip() for n in inputs], "output": output, "channel": channel,
-            "mappings": mappings}
+            "mappings": mappings, "wing": wing, "anchors": anchors}
 
 
 def describe_action(action, channel):
@@ -579,6 +651,8 @@ def describe_action(action, channel):
                   else f", User Key {o['user_key']}" if o["user_key"] else "")
         what = scale if scale == "Chromatic" else f"{root} {scale}"
         return f"key {what}{target}" + (", Send to All" if o["send_to_all"] else "")
+    if action["do"] == "rack":
+        return f"select {rack_route(action['opts'])[1]}"
     if action["do"] == "cc":
         return f"CC {action['cc']} = {action['value']} on channel {action['channel'] or channel}"
     if action["do"] == "snapshot":
@@ -589,6 +663,8 @@ def describe_action(action, channel):
 def run_action(out, action, channel, stop):
     if action["do"] == "key":
         return run_key(out, channel, action["root"], action["opts"])
+    if action["do"] == "rack":
+        return f"selected {select_rack(out, channel, action['opts'])}"
     if action["do"] == "cc":
         out.send(mido.Message("control_change", channel=(action["channel"] or channel) - 1,
                               control=action["cc"], value=action["value"]))
@@ -655,20 +731,21 @@ def log(text):
     print(f"{datetime.now():%H:%M:%S}  {text}")
 
 
-def incoming(names, stop):
+def incoming(names, stop, messages=None):
     """Yield (input name, message) from all inputs until stop is set, in the order the messages came in.
 
     Blocks without polling. Twice a second it checks the stop flag and that each input still exists; an unplugged
     device is reported once and reopened when it comes back, while the other inputs keep working.
     All port handling stays on this thread: CoreMIDI did not report a returning port to checks from other threads.
+    Other sources (the WING follower) can put their own (source, item) pairs into the same messages queue.
     """
-    messages = queue.Queue()
+    messages = queue.Queue() if messages is None else messages
     inputs = [_Input(name, messages) for name in names]
     try:
         next_check = 0.0
         while not stop.is_set():
             if time.monotonic() >= next_check:
-                present = port_names("input")
+                present = port_names("input") if inputs else []
                 for inp in inputs:
                     inp.check(present.count(inp.name))
                 next_check = time.monotonic() + PORT_CHECK_SECONDS
@@ -776,6 +853,214 @@ class ReconnectingOutput:
             self.port.close()
 
 
+# --- WING: the selected channel strip as an input --------------------------------------------------
+
+WING_SELIDX = "/$ctl/$stat/selidx"  # selected channel strip; reads 0-75
+# All 76 strips in selidx order (measured: channels, aux and bus 5; main and matrix follow the documented order).
+WING_ALL_STRIPS = ([f"ch{n}" for n in range(1, 41)] + [f"aux{n}" for n in range(1, 9)]
+                   + [f"bus{n}" for n in range(1, 17)] + [f"main{n}" for n in range(1, 5)]
+                   + [f"mtx{n}" for n in range(1, 9)])
+
+
+def parse_wing(raw):
+    """Check the 'wing:' section of a mapping file."""
+    if not isinstance(raw, dict):
+        raise ValueError("wing must be a mapping like {host: 192.168.1.71, name: WING}")
+    raw = _normalize_keys(raw)
+    check_keys(raw, {"host", "name", "port", "poll"}, "wing: ")
+    for key in ("host", "name"):
+        if key in raw and (not isinstance(raw[key], str) or not raw[key].strip()):
+            raise ValueError(f"wing: {key} must be text, got {raw[key]!r}")
+    if "host" not in raw:
+        raise ValueError("wing: host must be the WING's IP address, e.g. host: 192.168.1.71")
+    return {"host": raw["host"].strip(), "name": raw.get("name", "WING").strip(),
+            "port": check_int(raw.get("port", 2223), 1, 65535, "port", "wing: "),
+            "poll": float(check_number(raw.get("poll", 0.1), 0.02, 5, "poll", "wing: "))}
+
+
+def parse_anchors(raw):
+    """rack_anchors: {rack: User Key}, User Keys set to "Navigation > View Rack > rack" in SuperRack."""
+    if not isinstance(raw, dict):
+        raise ValueError("rack_anchors must map racks to User Keys, e.g. rack_anchors: {4: 13, 12: 14}")
+    return {check_int(rack, 1, 1024, "rack", "rack_anchors: "): check_int(key, 1, 16, "User Key", f"rack_anchors: {rack}: ")
+            for rack, key in raw.items()}
+
+
+def check_anchors(anchors, user_key_cc, max_racks, where=""):
+    """Anchors must be racks that exist (<= max_racks) and User Keys whose CC fits (user_key_cc + key - 1 <= 127)."""
+    for rack, key in anchors.items():
+        if rack > max_racks:
+            raise ValueError(f"{where}rack_anchors: rack {rack} is above max_racks ({max_racks})")
+        if user_key_cc + key - 1 > 127:
+            raise ValueError(f"{where}rack_anchors: User Key {key} needs CC {user_key_cc + key - 1} "
+                             f"(user_key_cc {user_key_cc}), above 127")
+
+
+def rack_route(o):
+    """The button presses that select rack o["rack"], as [(cc, times), ...], and a description.
+
+    With anchors (User Keys set to "Navigation > View Rack" in SuperRack) the nearest one is pressed and the rest are
+    NEXT/PREV RACK steps: a few messages, and correct whatever rack was selected before, also after a click in
+    SuperRack. Without anchors it goes to rack 1 first like --rack, which takes max_racks presses.
+    """
+    rack, anchors = o["rack"], o["anchors"]
+    if anchors:
+        start = min(anchors, key=lambda r: (abs(r - rack), r))
+        route, how = [(o["user_key_cc"] + anchors[start] - 1, 1)], f"User Key {anchors[start]} (rack {start})"
+    else:
+        start, route, how = 1, [(o["prev_rack_cc"], o["max_racks"])], f"{o['max_racks']} x PREV RACK"
+    steps = rack - start
+    if steps:
+        route.append((o["next_rack_cc"] if steps > 0 else o["prev_rack_cc"], abs(steps)))
+        how += f", {abs(steps)} x {'NEXT' if steps > 0 else 'PREV'} RACK"
+    return route, f"rack {rack} via {how}"
+
+
+def select_rack(out, channel, o):
+    route, description = rack_route(o)
+    for control, times in route:
+        for _ in range(times):  # one message per press, like the other buttons
+            out.send(mido.Message("control_change", channel=channel - 1, control=control, value=127))
+            time.sleep(o["pause"])
+    return description
+
+
+def osc_request(address):
+    """An OSC message without arguments: WING answers it with the current value."""
+    data = address.encode()
+    return data + b"\0" * (4 - len(data) % 4)
+
+
+def _osc_string(data, pos):
+    end = data.index(b"\0", pos)
+    return data[pos:end].decode("utf-8", "replace"), (end // 4 + 1) * 4
+
+
+def parse_osc(data):
+    """(address, [arguments]) of an OSC message, for the argument types WING sends (i, f, s)."""
+    address, pos = _osc_string(data, 0)
+    if data[pos:pos + 1] != b",":
+        return address, []
+    tags, pos = _osc_string(data, pos)
+    args = []
+    for tag in tags[1:]:
+        if tag in "if":
+            args.append(struct.unpack(">" + tag, data[pos:pos + 4])[0])
+            pos += 4
+        elif tag == "s":
+            text, pos = _osc_string(data, pos)
+            args.append(text)
+        else:
+            break
+    return address, args
+
+
+def selected_strip(args):
+    """Number (1-76) of the selected strip from WING's answer: text "3", float, int 2 (the int counts from 0)."""
+    number = next((a + 1 for a in args if isinstance(a, int)), None)
+    if number is None and args and isinstance(args[0], str) and args[0].isdigit():
+        number = int(args[0])
+    return number
+
+
+class WingSelect:
+    """A channel strip selected on the WING. Looks enough like a mido message for triggers (type, strip, time)."""
+
+    type = "channel_select"
+
+    def __init__(self, strip, seq, relevant=True):
+        # relevant: a mapping reacts to this strip; only those are skipped when a newer relevant one follows
+        self.strip, self.seq, self.relevant, self.time = strip, seq, relevant, time.monotonic()
+
+    def __str__(self):
+        return WING_ALL_STRIPS[self.strip - 1] if 1 <= self.strip <= len(WING_ALL_STRIPS) else f"strip #{self.strip}"
+
+
+class WingFollower(threading.Thread):
+    """Ask the WING for the selected channel strip several times a second and queue every change.
+
+    Polling instead of subscribing (/*S): WING keeps only one subscription, so subscribing would take it away from
+    other tools (or lose it to them). Only UDP happens here, no MIDI, so this can run on its own thread.
+    """
+
+    def __init__(self, w, messages, stop, relevant=None):
+        super().__init__(name="WING", daemon=True)
+        self.w, self.messages, self.stop = w, messages, stop
+        # relevant(strip): does a mapping react to this strip? Only those count as "newer" for skipping older ones,
+        # so selecting an unmapped strip (e.g. a bus) does not cancel a mapped selection still waiting in the queue.
+        self.relevant = relevant or (lambda strip: True)
+        self.seq = 0  # number of the newest relevant change; queued older ones are outdated by then
+
+    @staticmethod
+    def _answer(sock, timeout=0.5):
+        """Wait at most timeout for the answer to our request, skipping other messages."""
+        deadline = time.monotonic() + timeout
+        while True:
+            left = deadline - time.monotonic()
+            if left <= 0:
+                raise socket.timeout("no answer")
+            sock.settimeout(left)
+            data = sock.recvfrom(4096)[0]
+            try:
+                address, args = parse_osc(data)
+            except (ValueError, struct.error):
+                continue  # not a valid OSC message: skip it like any other
+            if address == WING_SELIDX:
+                return args
+
+    @staticmethod
+    def _drain(sock):
+        """Drop answers that came in late: otherwise every later poll would read the previous one."""
+        sock.setblocking(False)
+        for _ in range(100):  # bounded: a persistent error must not turn this into a busy loop
+            try:
+                sock.recv(4096)
+            except BlockingIOError:  # nothing left
+                return
+            except OSError:  # an ICMP error from an earlier packet: keep draining what comes after it
+                continue
+
+    def run(self):
+        host, port, poll = self.w["host"], self.w["port"], self.w["poll"]
+        request, last, failures, reported = osc_request(WING_SELIDX), None, 0, False
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.bind(("", 0))  # bound from the start: Windows refuses recv on an unbound UDP socket
+            while not self.stop.is_set():
+                try:
+                    self._drain(sock)
+                    sock.sendto(request, (host, port))
+                    args = self._answer(sock)
+                except OSError as e:
+                    failures += 1
+                    # A single lost UDP packet is normal; report after about 1.5 s without an answer.
+                    if not reported and (failures >= 3 or not isinstance(e, socket.timeout)):
+                        if isinstance(e, socket.timeout):
+                            log(f"WING {host}:{port} does not answer (switched on? right IP?). Retrying ...")
+                        elif isinstance(e, (ConnectionRefusedError, ConnectionResetError)):  # ICMP port unreachable
+                            log(f"WING {host}: nothing answers on port {port} (OSC is on 2223). Retrying ...")
+                        else:  # e.g. "No route to host" when macOS blocks the local network for this app
+                            hint = (" On macOS the terminal app needs 'Local Network' access (System Settings > "
+                                    "Privacy & Security).") if sys.platform == "darwin" else ""
+                            log(f"WING {host}:{port} cannot be reached ({e}). Retrying ...{hint}")
+                        reported = True
+                    self.stop.wait(1 if not isinstance(e, socket.timeout) else 0)
+                    continue
+                if reported:
+                    log(f"WING {host} answers again.")
+                failures, reported = 0, False
+                number = selected_strip(args)
+                if number is not None and number != last:
+                    if last is None:  # only the starting point: nothing was selected yet while we listened
+                        log(f"WING {host}: {WingSelect(number, 0)} is selected")
+                    else:
+                        relevant = self.relevant(number)
+                        if relevant:
+                            self.seq += 1
+                        self.messages.put((self.w["name"], WingSelect(number, self.seq, relevant)))
+                    last = number
+                self.stop.wait(poll)
+
+
 def check_no_feedback(mapping, channel, port_name):
     """Input and output are the same port: the messages sent here come straight back in. Refuse triggers that could
     match them, otherwise a mapping could trigger itself again and again."""
@@ -795,6 +1080,8 @@ def check_no_feedback(mapping, channel, port_name):
                     buttons.add(o["hot_plugin_cc"] + o["hot_plugin"] - 1)
                 if o["user_key"]:
                     buttons.add(o["user_key_cc"] + o["user_key"] - 1)
+                if o["rack"] and o.get("anchors"):
+                    buttons |= {c for c, _ in rack_route(o)[0]}
                 sent |= {("control_change", ch, c, 127) for c in buttons}
             elif a["do"] == "cc":
                 sent.add(("control_change", (a["channel"] or channel) - 1, a["cc"], a["value"]))
@@ -802,6 +1089,8 @@ def check_no_feedback(mapping, channel, port_name):
                 ch = (a["channel"] or channel) - 1
                 bank, program = divmod(a["number"] - 1, 128)
                 sent |= {("control_change", ch, 32, bank), ("program_change", ch, program, None)}
+            elif a["do"] == "rack":
+                sent |= {("control_change", channel - 1, c, 127) for c, _ in rack_route(a["opts"])[0]}
 
     def could_loop(trig):
         number_field, value_field = TRIGGER_NUMBER[trig["type"]], TRIGGER_VALUE.get(trig["type"])
@@ -819,8 +1108,23 @@ def check_no_feedback(mapping, channel, port_name):
     print(f"Note: input and output are both '{port_name}'. Triggers also reach SuperRack.")
 
 
+def resolve_sources(wanted, wing, mappings):
+    """Split the wanted inputs into MIDI ports and the WING (an input named exactly like wing['name'])."""
+    if not wanted and wing and all(m["trigger"]["type"] == "channel_select" for m in mappings):
+        wanted = [wing["name"]]  # only WING triggers and no 'input:': listen to the WING alone
+    is_wing = lambda w: wing is not None and w.strip().lower() == wing["name"].lower()  # noqa: E731
+    use_wing = any(is_wing(w) for w in wanted or [])
+    midi = [w for w in wanted or [] if not is_wing(w)]
+    return (pick_inputs(midi) if midi or not use_wing else []), use_wing
+
+
 def cmd_listen(args):
     mapping = load_mapping(args.mapping)
+    wing = mapping["wing"]
+    if args.wing:
+        if not wing:
+            sys.exit(f"--wing needs a 'wing:' section in {args.mapping}")
+        wing["host"] = args.wing
     channel = args.channel or mapping["channel"]
     print(f"{args.mapping}: {len(mapping['mappings'])} mapping(s)")
     for m in mapping["mappings"]:
@@ -833,19 +1137,31 @@ def cmd_listen(args):
         print("Mapping OK.")
         return
 
-    in_names = pick_inputs(args.input or mapping["inputs"])
+    in_names, use_wing = resolve_sources(args.input or mapping["inputs"], wing, mapping["mappings"])
+    sources = in_names + ([wing["name"]] if use_wing else [])
     errors = []
     for m in mapping["mappings"]:
-        wanted = m["trigger"].get("input")
+        trig, wanted = m["trigger"], m["trigger"].get("input")
+        if trig["type"] == "channel_select":
+            if not use_wing:
+                errors.append(f"'{m['name']}': channel_select needs the WING in the inputs ('{wing['name']}')")
+            elif wanted is not None and match_names(wanted, sources) != [wing["name"]]:
+                errors.append(f"'{m['name']}': channel_select only comes from the WING ('{wing['name']}'), "
+                              f"not from '{wanted}'")
+            else:
+                trig["port"] = wing["name"]
+            continue
         if wanted is None:
             continue
-        hits = match_names(wanted, in_names)
-        if len(hits) == 1:
-            m["trigger"]["port"] = hits[0]
+        hits = match_names(wanted, sources)
+        if wing and hits == [wing["name"]]:
+            errors.append(f"'{m['name']}': the WING ('{wanted}') only sends channel_select, not {trig['type']}")
+        elif len(hits) == 1:
+            trig["port"] = hits[0]
         else:
             errors.append(f"'{m['name']}': input '{wanted}' matches {'several' if hits else 'none'} of them")
     if errors:
-        sys.exit(f"A trigger input must match exactly one of the inputs listened to ({in_names}):\n  "
+        sys.exit(f"Trigger inputs must match exactly one of the inputs listened to ({sources}):\n  "
                  + "\n  ".join(errors))
     warn_overlaps(mapping["mappings"], lambda trig: trig.get("port"))
     out_name = None if args.dry_run else pick_port(args.port or mapping["output"])
@@ -856,16 +1172,30 @@ def cmd_listen(args):
     except Exception as e:
         sys.exit(f"Cannot open output '{out_name}': {e}")
     target = "nothing (dry run)" if args.dry_run else f"'{out_name}' (SuperRack channel {channel})"
-    print(f"Listening on {', '.join(repr(n) for n in in_names)}, sending to {target}. Ctrl+C stops.")
+    shown = [repr(n) for n in in_names] + ([f"'{wing['name']}' (WING {wing['host']})"] if use_wing else [])
+    print(f"Listening on {', '.join(shown)}, sending to {target}. Ctrl+C stops.")
     # With several inputs, say which one a message came from.
-    origin = (lambda port: f"  [{port}]") if len(in_names) > 1 else (lambda port: "")
+    origin = (lambda port: f"  [{port}]") if len(sources) > 1 else (lambda port: "")
     last_match, busy_until = None, 0.0
+    messages = queue.Queue()
     with stop_requested() as stop, output as out:
-        for port, msg in incoming(in_names, stop):
+        selects = [m["trigger"] for m in mapping["mappings"] if m["trigger"]["type"] == "channel_select"]
+        follower = WingFollower(wing, messages, stop, relevant=lambda strip: any(
+            trig["strip"][0] <= strip <= trig["strip"][1] for trig in selects)) if use_wing else None
+        if follower:
+            follower.start()
+        for port, msg in incoming(in_names, stop, messages):
+            selection = isinstance(msg, WingSelect)
+            if selection and msg.relevant and msg.seq != follower.seq:
+                # Another strip was selected since (e.g. while an action was running): only the newest one counts.
+                if args.verbose:
+                    log(f"WING {msg} selected, skipped: a newer selection follows")
+                continue
             match = next((m for m in mapping["mappings"] if trigger_matches(m["trigger"], msg, port)), None)
             if not match:
                 if args.verbose and msg.type not in REALTIME_TYPES:
-                    log(f"(no mapping) {msg.copy(time=0)}{origin(port)}")
+                    text = f"WING {msg} selected" if selection else msg.copy(time=0)
+                    log(f"(no mapping) {text}{origin(port)}")
                 continue
             if match is last_match and msg.time < busy_until:
                 # Pressed again while its own action was still running: the result would be the same, only later.
@@ -887,20 +1217,31 @@ def cmd_listen(args):
                 except Exception as e:  # keep listening even if one action fails
                     print(f"    failed: {e}")
             last_match, busy_until = match, time.monotonic()
+        if follower:
+            follower.join(timeout=2)
     print("Stopped.")
 
 
 def cmd_monitor(args):
     """Print incoming messages in the trigger format used by mapping files."""
-    in_names = pick_inputs(args.input)
-    print(f"Listening on {', '.join(repr(n) for n in in_names)}. Copy a line into the mapping file as 'trigger:'. "
-          "Ctrl+C stops.")
+    in_names = pick_inputs(args.input) if args.input or not args.wing else []
+    sources = in_names + (["WING"] if args.wing else [])
+    shown = [repr(n) for n in in_names] + ([f"'WING' ({args.wing})"] if args.wing else [])
+    print(f"Listening on {', '.join(shown)}. Copy a line into the mapping file as 'trigger:'. Ctrl+C stops.")
+    messages = queue.Queue()
     with stop_requested() as stop:
-        for port, msg in incoming(in_names, stop):
+        follower = None
+        if args.wing:
+            follower = WingFollower({"host": args.wing, "name": "WING", "port": 2223, "poll": 0.1}, messages, stop)
+            follower.start()
+        for port, msg in incoming(in_names, stop, messages):
+            # With several inputs, the line names its input, so the trigger only reacts to that device.
+            source = f", input: {json.dumps(port, ensure_ascii=False)}" if len(sources) > 1 else ""
+            if isinstance(msg, WingSelect):
+                print(f"{{type: channel_select, strip: {msg}{source}}}")
+                continue
             if msg.type in REALTIME_TYPES:
                 continue
-            # With several inputs, the line names its input, so the trigger only reacts to that device.
-            source = f", input: {json.dumps(port, ensure_ascii=False)}" if len(in_names) > 1 else ""
             ch = getattr(msg, "channel", None)
             if msg.type in ("note_on", "note_off"):
                 kind = "note_off" if msg.type == "note_off" or msg.velocity == 0 else "note_on"
@@ -912,6 +1253,8 @@ def cmd_monitor(args):
                 print(f"{{type: program_change, channel: {ch + 1}, program: {msg.program}{source}}}")
             else:
                 print(f"# {msg.copy(time=0)}   (not usable as trigger){'  [' + port + ']' if source else ''}")
+        if follower:
+            follower.join(timeout=2)
     print("Stopped.")
 
 
@@ -1056,10 +1399,12 @@ def main():
     s.add_argument("--check", action="store_true", help="only validate the mapping file, open no ports")
     s.add_argument("--dry-run", action="store_true", help="show what would be sent, send nothing")
     s.add_argument("--verbose", "-v", action="store_true", help="also print messages without a mapping")
+    s.add_argument("--wing", metavar="IP", help="IP address of the WING (overrides 'host' in the 'wing:' section)")
     s.set_defaults(func=cmd_listen)
 
     s = sub.add_parser("monitor", help="print incoming MIDI messages in trigger format")
     s.add_argument("--input", action="append", help="MIDI input, part of the port name; repeat for several")
+    s.add_argument("--wing", metavar="IP", help="also show the channel strips selected on a Behringer WING")
     s.set_defaults(func=cmd_monitor)
 
     s = sub.add_parser("send", parents=[outp, ccp], help="send a single CC value")

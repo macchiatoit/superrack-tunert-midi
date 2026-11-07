@@ -28,6 +28,8 @@ during testing, but the plugin parameters still respond.
 - The Python script [`tunert_midi.py`](tunert_midi.py) does everything in one call:
   `key D --scale harmonic-minor --hot-plugin 2 --send-to-all`.
 - With `listen`, the script reacts to a MIDI controller (pads, footswitch, Program Change) based on a YAML mapping.
+- A **Behringer WING** can be an input too (OSC): selecting a channel on the WING can, for example, select its rack
+  in SuperRack.
 
 ## Setup: MIDI Controller in SuperRack
 
@@ -370,17 +372,19 @@ mappings:
 
 | Trigger field | Meaning |
 |---|---|
-| `type` | `note_on`, `note_off`, `control_change` or `program_change` |
+| `type` | `note_on`, `note_off`, `control_change` or `program_change`; `channel_select` for a WING (see below) |
 | `channel` | 1–16; leave out to accept any channel |
 | `note` / `control` / `program` | number 0–127, or a range like `[60, 72]` |
 | `velocity` (notes) / `value` (CC) | optional, number or range, e.g. `value: [64, 127]` for "fader in the upper half" |
 | `input` | optional, only with several inputs: react only to messages from this input (part of the port name) |
+| `strip` | only `channel_select`: WING channel strip like `ch1` or `aux2`, or a range like `[ch1, ch8]` |
 
 A `note_on` with velocity 0 counts as `note_off`, so releasing a pad does not trigger a `note_on` mapping.
 
 | Action | Example | Meaning |
 |---|---|---|
 | key | `{key: D, scale: dorian, user_key: 2, send_to_all: true}` | like the `key` command; every option of it with `_` instead of `-` |
+| rack | `{rack: 17}` | select rack 17, quickest with `rack_anchors` (see the WING section below) |
 | cc | `{cc: 20, value: 127, channel: 1}` | send a single CC to SuperRack |
 | snapshot | `{snapshot: 3}` | recall a SuperRack snapshot via Program Change (needs **Follow Prg. Changes**, see above) |
 | wait | `{wait: 0.5}` | pause in seconds |
@@ -420,6 +424,7 @@ come from, so two sequences never get mixed up on the way to SuperRack.
 | `--dry-run` | listen, but only print what would be sent |
 | `--verbose` | also print messages without a mapping (MIDI clock and active sensing left out) |
 | `--input`, `--port`, `--channel` | override `input`, `output`, `channel` from the file; repeat `--input` for several inputs |
+| `--wing IP` | overrides `host` in the `wing:` section (see the WING section below) |
 
 Errors in the file are reported with mapping number and name, e.g.
 `mapping 2 (Song 2), action 1: unknown scale 'dorain'`. Types are checked too: `send_to_all: "false"` (text instead
@@ -470,6 +475,84 @@ note 60); `monitor` shows the note numbers your instrument actually sends.
 | 7 (108) | – | · | · | · | · | · | · | · | · | · | · | · |
 
 The Chromatic octave sets Chromatic for all 12 keys: in Chromatic every note is allowed, so the root has no effect.
+
+### A Behringer WING as input (`mapping.wing.yaml`)
+
+`listen` can use a Behringer WING as an input: selecting a channel strip on the WING is a trigger like a pad press,
+and its mapping can do anything, typically select the channel's rack in SuperRack. The script asks the WING for the
+selected strip ten times a second over OSC (UDP port 2223). It does not subscribe: WING keeps only one subscription,
+and taking it would cut off other tools that use it.
+
+```bash
+.venv/bin/python tunert_midi.py monitor --wing 192.168.1.71      # prints every selection as a trigger line
+.venv/bin/python tunert_midi.py listen mapping.wing.yaml --check
+.venv/bin/python tunert_midi.py listen mapping.wing.yaml
+```
+
+```yaml
+wing:
+  host: 192.168.1.71        # IP of the WING (Setup > Network); listen --wing IP overrides it
+  name: WING                # its name in input: and in triggers (default: WING)
+
+input: [WING, Launchpad Pro Standalone]
+rack_anchors: {4: 13, 12: 14, 20: 15, 28: 16}   # rack: User Key set to "View Rack"
+
+mappings:
+  - name: Kick In
+    trigger: {type: channel_select, strip: ch1}
+    rack: 1
+  - name: Lead vocal - rack and key
+    trigger: {type: channel_select, strip: ch17}
+    actions:
+      - {rack: 17}
+      - {key: E, scale: natural-minor, hot_plugin: 2}
+  - name: Pad - rack 9
+    trigger: {type: note_on, note: 36, input: Launchpad}
+    rack: 9
+```
+
+| `wing:` field | Meaning |
+|---|---|
+| `host` | IP address of the WING (required) |
+| `name` | name of the WING in `input:` and in trigger `input:` (default `WING`). An exact match wins over MIDI ports, so the WING's own USB MIDI ports ("WING …") remain usable as MIDI inputs |
+| `poll`, `port` | how often the WING is asked (default 0.1 s) and its OSC port (default 2223) |
+
+The trigger `{type: channel_select, strip: ch1}` takes `ch1`–`ch40`, `aux1`–`aux8`, `bus1`–`bus16`, `main1`–`main4`,
+`mtx1`–`mtx8`, or a range in WING order like `strip: [ch1, ch8]`. `input:` is not needed with a single WING. Without
+`input:` in the file, `listen` listens to the WING alone if all triggers are `channel_select`. A MIDI trigger with
+`input: WING` is refused, because the WING only sends `channel_select`.
+
+The first selection read at start only serves as the starting point; from then on every change is a trigger. If
+several strips are selected quickly one after another (e.g. scrolling through channels), only the newest one that
+has a mapping is executed; selecting an unmapped strip (e.g. a bus) does not cancel a mapped one that is still
+waiting. All triggers, from the WING and from MIDI, run one after another and never get mixed. If the WING does not
+answer, `listen` says so once and continues as soon as it is back.
+
+**The `rack` action and anchors.** `{rack: N}` selects rack N, from any trigger: a WING selection, a pad, a key.
+SuperRack can only step through racks with PREV/NEXT RACK, and it does not report which rack is selected. User Keys
+can jump to a rack directly: SETUP → User Key Assignments → Navigation → View Rack → rack N (also for racks without
+plugins). `rack_anchors` lists them. A rack action presses the nearest one and then at most 4 × NEXT or PREV RACK
+(with anchors on 4, 12, 20 and 28 for 32 racks). Every change is absolute, so it also lands right after a rack was
+clicked in SuperRack. "View Rack" also switches SuperRack to the RACK page. Without anchors, a rack action first goes
+to rack 1 (64 × PREV RACK, several seconds). Option `pause`: seconds after each message (default 0.05).
+`rack_anchors` also speed up key actions with `rack:` (e.g. `{key: E, rack: 17}`), which then switch to the RACK page
+as well and use at least 0.05 s per message (a longer `nav_pause` applies). As before, such a key action sets the plugin that is selected in that rack, so that should be the Tune RT;
+both routes select the same plugin (checked in three racks).
+
+![User Key set to Navigation → View Rack](images/user-key-view-rack.png)
+
+The WING numbers its strips 1–40 for the channels, then aux 1–8, bus 1–16, main 1–4 and matrix 1–8
+(`/$ctl/$stat/selidx`; measured for channels, aux and a bus).
+
+Tested with a WING Compact (firmware 3.1) and SuperRack with 32 racks: reading the selected strip answered within
+1 ms over the network (850 queries, none lost). With anchors on 4, 12, 20 and 28, every rack 1–32 was hit in random
+order: 128 of 128 at 0.02 s and 96 of 96 at 0.01 s per message; without any pause, messages got lost. The rack action
+uses 0.05 s. Through `listen`, a simulated WING selected all 32 racks correctly, pads selected racks too, and in fast
+scrolling (8 selections 0.12 s apart) SuperRack always ended on the last one. Live on the WING, channels 1–24 and
+jumps back and forth all selected the right rack, also after clicks in SuperRack.
+
+On macOS, the terminal app needs access to the local network (System Settings → Privacy & Security → Local
+Network); without it, `listen` reports "No route to host".
 
 ## Measurements
 
