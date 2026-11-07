@@ -456,7 +456,8 @@ mapping, unmapped pads and aftertouch were ignored.
 
 [`mapping.arius.yaml`](mapping.arius.yaml) turns a Yamaha ARIUS digital piano into a key selector: one octave per
 scale, the key you press is the root. Every key targets Hot Plugin 1 and presses Send to All, so all Tune RT instances
-with Receive follow.
+with Receive follow. A Behringer WING is a second input: selecting channel 1–32 on it selects rack 1–32 (see the
+WING section below).
 
 All 88 keys of the piano (A−1 to C7). The column is the root, the cell the scale that the key sets; "–" means not
 mapped, "·" means there is no such key on an 88-key piano. Octaves are numbered the Yamaha way (middle C = C3 =

@@ -11,13 +11,20 @@
 #   C4-B4 (72-83)  Melodic Minor (Ascending)
 #   all other keys: not mapped
 #
-# To use a second controller at the same time (e.g. a Launchpad), list both inputs,
-# input: [ARIUS, Launchpad Pro Standalone], and add "input: ARIUS" to these triggers so the Launchpad's notes
-# do not set keys too (see mapping.example.yaml).
+# A Behringer WING is a second input: selecting channel 1-32 on the WING selects rack 1-32 in SuperRack
+# (via the User Key anchors below; see mapping.wing.yaml). The WING only sends channel_select, so the piano triggers
+# need no "input:". To add another MIDI controller (e.g. a Launchpad), list it under input: and add
+# "input: ARIUS" to the piano triggers so its notes do not set keys too (see mapping.example.yaml).
 
-input: ARIUS
+input: [ARIUS, WING]
 output: IAC-Treiber SuperRack SoundGrid
 channel: 1
+
+wing:
+  host: 10.10.2.21          # IP address of the WING (Setup > Network); listen --wing IP overrides it
+
+# User Keys set to "Navigation > View Rack > rack N" in SuperRack (SETUP > User Key Assignments)
+rack_anchors: {4: 13, 12: 14, 20: 15, 28: 16}   # rack: User Key
 
 defaults:
   hot_plugin: 1
@@ -93,3 +100,37 @@ mappings:
   - {name: "A4 - A Melodic Minor (Ascending)", trigger: {type: note_on, note: 81}, key: A, scale: melodic-minor}
   - {name: "Bb4 - Bb Melodic Minor (Ascending)", trigger: {type: note_on, note: 82}, key: Bb, scale: melodic-minor}
   - {name: "B4 - B Melodic Minor (Ascending)", trigger: {type: note_on, note: 83}, key: B, scale: melodic-minor}
+
+  # WING channel 1-32: rack 1-32
+  - {name: ch1 - rack 1, trigger: {type: channel_select, strip: ch1}, rack: 1}
+  - {name: ch2 - rack 2, trigger: {type: channel_select, strip: ch2}, rack: 2}
+  - {name: ch3 - rack 3, trigger: {type: channel_select, strip: ch3}, rack: 3}
+  - {name: ch4 - rack 4, trigger: {type: channel_select, strip: ch4}, rack: 4}
+  - {name: ch5 - rack 5, trigger: {type: channel_select, strip: ch5}, rack: 5}
+  - {name: ch6 - rack 6, trigger: {type: channel_select, strip: ch6}, rack: 6}
+  - {name: ch7 - rack 7, trigger: {type: channel_select, strip: ch7}, rack: 7}
+  - {name: ch8 - rack 8, trigger: {type: channel_select, strip: ch8}, rack: 8}
+  - {name: ch9 - rack 9, trigger: {type: channel_select, strip: ch9}, rack: 9}
+  - {name: ch10 - rack 10, trigger: {type: channel_select, strip: ch10}, rack: 10}
+  - {name: ch11 - rack 11, trigger: {type: channel_select, strip: ch11}, rack: 11}
+  - {name: ch12 - rack 12, trigger: {type: channel_select, strip: ch12}, rack: 12}
+  - {name: ch13 - rack 13, trigger: {type: channel_select, strip: ch13}, rack: 13}
+  - {name: ch14 - rack 14, trigger: {type: channel_select, strip: ch14}, rack: 14}
+  - {name: ch15 - rack 15, trigger: {type: channel_select, strip: ch15}, rack: 15}
+  - {name: ch16 - rack 16, trigger: {type: channel_select, strip: ch16}, rack: 16}
+  - {name: ch17 - rack 17, trigger: {type: channel_select, strip: ch17}, rack: 17}
+  - {name: ch18 - rack 18, trigger: {type: channel_select, strip: ch18}, rack: 18}
+  - {name: ch19 - rack 19, trigger: {type: channel_select, strip: ch19}, rack: 19}
+  - {name: ch20 - rack 20, trigger: {type: channel_select, strip: ch20}, rack: 20}
+  - {name: ch21 - rack 21, trigger: {type: channel_select, strip: ch21}, rack: 21}
+  - {name: ch22 - rack 22, trigger: {type: channel_select, strip: ch22}, rack: 22}
+  - {name: ch23 - rack 23, trigger: {type: channel_select, strip: ch23}, rack: 23}
+  - {name: ch24 - rack 24, trigger: {type: channel_select, strip: ch24}, rack: 24}
+  - {name: ch25 - rack 25, trigger: {type: channel_select, strip: ch25}, rack: 25}
+  - {name: ch26 - rack 26, trigger: {type: channel_select, strip: ch26}, rack: 26}
+  - {name: ch27 - rack 27, trigger: {type: channel_select, strip: ch27}, rack: 27}
+  - {name: ch28 - rack 28, trigger: {type: channel_select, strip: ch28}, rack: 28}
+  - {name: ch29 - rack 29, trigger: {type: channel_select, strip: ch29}, rack: 29}
+  - {name: ch30 - rack 30, trigger: {type: channel_select, strip: ch30}, rack: 30}
+  - {name: ch31 - rack 31, trigger: {type: channel_select, strip: ch31}, rack: 31}
+  - {name: ch32 - rack 32, trigger: {type: channel_select, strip: ch32}, rack: 32}

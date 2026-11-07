@@ -459,7 +459,8 @@ richtige Mapping aus, nicht belegte Pads und Aftertouch wurden ignoriert.
 
 [`mapping.arius.yaml`](mapping.arius.yaml) macht aus einem Yamaha-ARIUS-Digitalpiano einen Tonart-Wähler: eine Oktave
 pro Skala, die gedrückte Taste ist der Grundton. Jede Taste zielt auf Hot Plugin 1 und drückt Send to All, alle Tune RT
-mit Receive ziehen also mit.
+mit Receive ziehen also mit. Eine Behringer WING ist zweiter Eingang: Die Wahl von Kanal 1–32 auf ihr wählt Rack
+1–32 (siehe Abschnitt zur WING unten).
 
 Alle 88 Tasten des Pianos (A−1 bis C7). Die Spalte ist der Grundton, die Zelle die Skala, die die Taste setzt; „–“ heisst
 nicht belegt, „·“ heisst, diese Taste gibt es auf einem 88-Tasten-Piano nicht. Die Oktaven sind nach Yamaha nummeriert
