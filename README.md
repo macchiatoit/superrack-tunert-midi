@@ -385,6 +385,7 @@ A `note_on` with velocity 0 counts as `note_off`, so releasing a pad does not tr
 |---|---|---|
 | key | `{key: D, scale: dorian, user_key: 2, send_to_all: true}` | like the `key` command; every option of it with `_` instead of `-` |
 | rack | `{rack: 17}` | select rack 17, quickest with `rack_anchors` (see the WING section below) |
+| plugin | `{plugin: lead_tune, state: off}` | bypass (`off`), activate (`on`) or toggle (`toggle`) a plugin, see below |
 | cc | `{cc: 20, value: 127, channel: 1}` | send a single CC to SuperRack |
 | snapshot | `{snapshot: 3}` | recall a SuperRack snapshot via Program Change (needs **Follow Prg. Changes**, see above) |
 | wait | `{wait: 0.5}` | pause in seconds |
@@ -459,6 +460,32 @@ between, or a `rack` action before a key command without a target, cancels the s
 
 Tested with a Launchpad Pro (Note mode, top row = notes 71–74) and SuperRack: every pad press ran the right
 mapping, unmapped pads and aftertouch were ignored.
+
+### Bypassing single plugins (`plugins:`)
+
+SuperRack can bypass a single plugin with a User Key: SETUP → User Key Assignments → Mute / Bypass → Plugin
+Bypass → rack → slot. Over MIDI such a key only toggles (every message flips the state, value 0 included; the same
+goes for RACK ON and Tune RT's Correction ON), and SuperRack does not report the state. So the mapping file states
+what each plugin is when `listen` starts, and the script keeps track from there:
+
+```yaml
+plugins:
+  lead_tune: {user_key: 2, state: on}     # User Key 2 = Plugin Bypass of that plugin; on = active at start
+  doubler:   {user_key: 3, state: off}    # bypassed at start
+
+mappings:
+  - name: Tune off
+    trigger: {type: note_on, note: 40}
+    plugin: lead_tune
+    state: off                            # on, off or toggle
+```
+
+`on`/`off` only press the User Key when the state changes; `toggle` always presses it. If the plugin was switched
+elsewhere (in SuperRack, by a snapshot), the tracked state is wrong until a `toggle` or a manual switch brings them
+back in line. A plugin's User Key may not also be a rack anchor. Pressing the key does not change the selected rack.
+
+Tested live with User Key 2 on the Tune RT in the template rack: off, off (skipped), on, toggle, toggle switched the
+plugin exactly as expected, read back from its IN button.
 
 ### Example: digital piano (`mapping.arius.yaml`)
 

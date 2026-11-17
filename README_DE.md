@@ -388,6 +388,7 @@ Ein `note_on` mit Velocity 0 zählt als `note_off`. Das Loslassen eines Pads lö
 |---|---|---|
 | key | `{key: D, scale: dorian, user_key: 2, send_to_all: true}` | wie der Befehl `key`; alle seine Optionen, mit `_` statt `-` |
 | rack | `{rack: 17}` | Rack 17 wählen, am schnellsten mit `rack_anchors` (siehe Abschnitt zur WING unten) |
+| plugin | `{plugin: lead_tune, state: off}` | ein Plugin umgehen (`off`), aktivieren (`on`) oder umschalten (`toggle`), siehe unten |
 | cc | `{cc: 20, value: 127, channel: 1}` | einen einzelnen CC an SuperRack senden |
 | snapshot | `{snapshot: 3}` | SuperRack-Snapshot per Program Change abrufen (braucht **Follow Prg. Changes**, siehe oben) |
 | wait | `{wait: 0.5}` | Pause in Sekunden |
@@ -463,6 +464,33 @@ Tonart-Befehl ohne Ziel, hebt das Überspringen auf.
 
 Getestet mit einem Launchpad Pro (Note-Modus, oberste Reihe = Noten 71–74) und SuperRack: Jeder Pad-Druck löste das
 richtige Mapping aus, nicht belegte Pads und Aftertouch wurden ignoriert.
+
+### Einzelne Plugins umgehen (`plugins:`)
+
+SuperRack kann ein einzelnes Plugin per User Key umgehen (Bypass): SETUP → User Key Assignments → Mute / Bypass →
+Plugin Bypass → Rack → Slot. Per MIDI schaltet so ein Key nur um (jede Nachricht kippt den Zustand, auch Wert 0; das
+gilt ebenso für RACK ON und Correction ON von Tune RT), und SuperRack meldet den Zustand nicht. Deshalb steht in der
+Mapping-Datei, wie jedes Plugin beim Start von `listen` ist, und das Skript führt den Zustand ab dort selbst:
+
+```yaml
+plugins:
+  lead_tune: {user_key: 2, state: on}     # User Key 2 = Plugin Bypass dieses Plugins; on = beim Start aktiv
+  doubler:   {user_key: 3, state: off}    # beim Start umgangen
+
+mappings:
+  - name: Tune off
+    trigger: {type: note_on, note: 40}
+    plugin: lead_tune
+    state: off                            # on, off oder toggle
+```
+
+`on`/`off` drücken den User Key nur, wenn sich der Zustand ändert; `toggle` drückt immer. Wurde das Plugin anderswo
+umgeschaltet (in SuperRack, per Snapshot), stimmt der geführte Zustand nicht mehr, bis ein `toggle` oder ein Schalten
+von Hand beides wieder angleicht. Der User Key eines Plugins darf nicht zugleich Fixpunkt für Racks sein. Der Druck
+auf den Key wechselt das gewählte Rack nicht.
+
+Live getestet mit User Key 2 auf dem Tune RT im Template-Rack: aus, aus (übersprungen), an, umschalten, umschalten
+schalteten das Plugin genau wie erwartet, abgelesen am IN-Knopf.
 
 ### Beispiel: Digitalpiano (`mapping.arius.yaml`)
 

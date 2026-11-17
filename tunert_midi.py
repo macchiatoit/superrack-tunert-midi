@@ -511,10 +511,47 @@ def _optional_channel(raw, where):
 
 
 RACK_NAV_KEYS = ("prev_rack_cc", "next_rack_cc", "user_key_cc", "max_racks")
+
+
+def _on_off(value, allowed, what, where):
+    """'on'/'off'(/'toggle'). YAML 1.1 reads a bare on/off as true/false, so those count too."""
+    value = {True: "on", False: "off"}.get(value, value) if isinstance(value, bool) else value
+    if value not in allowed:
+        raise ValueError(f"{where}{what} must be {' or '.join(allowed)}, got {value!r}")
+    return value
+
+
+def parse_plugins(raw, user_key_cc):
+    """plugins: {name: {user_key: N, state: on|off}}: User Keys set to "Mute / Bypass > Plugin Bypass > rack > slot".
+
+    Plugin Bypass only toggles, and SuperRack does not report it, so the script keeps the state itself: state is
+    what the plugin is when listen starts (on = active, off = bypassed).
+    """
+    if not isinstance(raw, dict):
+        raise ValueError("plugins must map names to User Keys, e.g. plugins: {lead_tune: {user_key: 5, state: on}}")
+    plugins = {}
+    for name, spec in raw.items():
+        where = f"plugins: {name}: "
+        if not isinstance(spec, dict):
+            raise ValueError(f"{where}must be a mapping like {{user_key: 5, state: on}}")
+        spec = _normalize_keys(spec)
+        check_keys(spec, {"user_key", "state"}, where)
+        if "user_key" not in spec:
+            raise ValueError(f"{where}needs user_key (the User Key set to Plugin Bypass for this plugin)")
+        key = check_int(spec["user_key"], 1, 16, "user_key", where)
+        if user_key_cc + key - 1 > 127:
+            raise ValueError(f"{where}User Key {key} needs CC {user_key_cc + key - 1} (user_key_cc {user_key_cc}), "
+                             "above 127")
+        plugins[str(name)] = {"user_key": key, "state": _on_off(spec.get("state", "on"), ("on", "off"), "state", where)}
+    keys = [p["user_key"] for p in plugins.values()]
+    twice = sorted({k for k in keys if keys.count(k) > 1})
+    if twice:
+        raise ValueError(f"plugins: User Key {', '.join(map(str, twice))} is used for more than one plugin")
+    return plugins
 RACK_PAUSE = 0.05  # seconds per message on the anchor route (0.01 and 0.02 also worked in tests; 0.05 for margin)
 
 
-def parse_action(raw, defaults, where, anchors=None):
+def parse_action(raw, defaults, where, anchors=None, plugins=None):
     if not isinstance(raw, dict):
         raise ValueError(f"{where}action must be a mapping, got {raw!r}")
     raw = _normalize_keys(raw)
@@ -541,6 +578,17 @@ def parse_action(raw, defaults, where, anchors=None):
         if not isinstance(opts["repeat"], bool):
             raise ValueError(f"{where}repeat must be true or false, got {opts['repeat']!r}")
         return {"do": "key", "root": raw["key"], "opts": opts}
+    if "plugin" in raw:
+        check_keys(raw, {"plugin", "state"}, where, " for plugin")
+        name = str(raw["plugin"])
+        if name not in (plugins or {}):
+            raise ValueError(f"{where}unknown plugin {name!r}; define it under plugins: "
+                             f"({', '.join(plugins) if plugins else 'none defined'})")
+        if "state" not in raw:
+            raise ValueError(f"{where}plugin needs state: on, off or toggle")
+        return {"do": "plugin", "name": name, "state": _on_off(raw["state"], ("on", "off", "toggle"), "state", where),
+                "user_key": plugins[name]["user_key"],
+                "user_key_cc": defaults.get("user_key_cc", KEY_DEFAULTS["user_key_cc"])}
     if "rack" in raw:
         # Select a rack on its own (in a key action, rack: selects the rack of the Tune RT to set instead).
         check_keys(raw, {"rack", "pause", *RACK_NAV_KEYS}, where, " for rack")
@@ -580,7 +628,7 @@ def load_mapping(path):
     try:
         if not isinstance(data, dict):
             raise ValueError("top level must be a mapping with 'mappings:'")
-        check_keys(data, {"input", "output", "channel", "defaults", "mappings", "wing", "rack_anchors"}, "",
+        check_keys(data, {"input", "output", "channel", "defaults", "mappings", "wing", "rack_anchors", "plugins"}, "",
                    " at top level")
         raw_defaults = data.get("defaults") or {}
         if not isinstance(raw_defaults, dict):
@@ -604,8 +652,13 @@ def load_mapping(path):
             raise ValueError("mappings must be a list (each entry starts with '- ')")
         wing = None if data.get("wing") is None else parse_wing(data["wing"])
         anchors = parse_anchors(data.get("rack_anchors") or {})
-        check_anchors(anchors, check_int(defaults.get("user_key_cc", KEY_DEFAULTS["user_key_cc"]), 0, 127,
-                                         "user_key_cc", "defaults: "),
+        user_key_cc = check_int(defaults.get("user_key_cc", KEY_DEFAULTS["user_key_cc"]), 0, 127, "user_key_cc",
+                                "defaults: ")
+        plugins = parse_plugins(data.get("plugins") or {}, user_key_cc)
+        used = sorted(set(anchors.values()) & {p["user_key"] for p in plugins.values()})
+        if used:
+            raise ValueError(f"User Key {', '.join(map(str, used))} is both a rack anchor and a plugin bypass")
+        check_anchors(anchors, user_key_cc,
                       check_int(defaults.get("max_racks", KEY_DEFAULTS["max_racks"]), 1, 1024, "max_racks",
                                 "defaults: "))
     except ValueError as e:
@@ -632,7 +685,7 @@ def load_mapping(path):
                 raw_actions = [{k: v for k, v in entry.items() if k not in ("name", "trigger")}]
             if trig["type"] == "channel_select" and not wing:
                 raise ValueError(f"{where}channel_select needs a 'wing:' section with the WING's address")
-            actions = [parse_action(a, defaults, f"{where[:-2]}, action {j}: ", anchors)
+            actions = [parse_action(a, defaults, f"{where[:-2]}, action {j}: ", anchors, plugins)
                        for j, a in enumerate(raw_actions, 1)]
             mappings.append({"name": str(name) if name else describe_trigger(trig), "trigger": trig,
                              "actions": actions})
@@ -643,7 +696,7 @@ def load_mapping(path):
     if not mappings:
         sys.exit(f"{path}: no mappings defined")
     return {"inputs": inputs and [n.strip() for n in inputs], "output": output, "channel": channel,
-            "mappings": mappings, "wing": wing, "anchors": anchors}
+            "mappings": mappings, "wing": wing, "anchors": anchors, "plugins": plugins}
 
 
 def key_result(action):
@@ -655,6 +708,8 @@ def key_result(action):
 
 
 def describe_action(action, channel):
+    if action["do"] == "plugin":
+        return f"plugin {action['name']} {action['state']} (User Key {action['user_key']})"
     if action["do"] == "key":
         o = action["opts"]
         root = normalize_root(action["root"])
@@ -1101,6 +1156,8 @@ def check_no_feedback(mapping, channel, port_name):
                 ch = (a["channel"] or channel) - 1
                 bank, program = divmod(a["number"] - 1, 128)
                 sent |= {("control_change", ch, 32, bank), ("program_change", ch, program, None)}
+            elif a["do"] == "plugin":
+                sent.add(("control_change", channel - 1, a["user_key_cc"] + a["user_key"] - 1, 127))
             elif a["do"] == "rack":
                 sent |= {("control_change", channel - 1, c, 127) for c, _ in rack_route(a["opts"])[0]}
 
@@ -1143,6 +1200,9 @@ def cmd_listen(args):
         print(f"  {describe_trigger(m['trigger'])}  ->  "
               + " | ".join(describe_action(a, channel) for a in m["actions"])
               + (f"   [{m['name']}]" if m["name"] != describe_trigger(m["trigger"]) else ""))
+    if mapping["plugins"]:
+        print("Plugin bypass (state assumed at start): " + ", ".join(
+            f"{n} {p['state']} (User Key {p['user_key']})" for n, p in mapping["plugins"].items()))
     if args.check:
         # No ports are looked up here, so inputs count as the same if their names are written the same.
         warn_overlaps(mapping["mappings"], lambda trig: trig.get("input", "").lower() or None)
@@ -1194,6 +1254,8 @@ def cmd_listen(args):
     # by a snapshot, by Send to All from another instance) goes unnoticed; pressing another key first, or repeat: true,
     # sends it anyway.
     last_key = None
+    # Plugin Bypass via User Keys only toggles; the script keeps each plugin's state, starting from plugins: state.
+    plugin_state = {name: p["state"] for name, p in mapping["plugins"].items()}
     messages = queue.Queue()
     with stop_requested() as stop, output as out:
         selects = [m["trigger"] for m in mapping["mappings"] if m["trigger"]["type"] == "channel_select"]
@@ -1226,6 +1288,25 @@ def cmd_listen(args):
                 if stop.is_set():
                     print("    stop requested, remaining actions skipped")
                     break
+                if action["do"] == "plugin":
+                    name, want = action["name"], action["state"]
+                    if want != "toggle" and plugin_state[name] == want:
+                        print(f"    skipped: plugin {name} is already {want}")
+                        continue
+                    new = want if want != "toggle" else ("off" if plugin_state[name] == "on" else "on")
+                    if args.dry_run:
+                        print(f"    would do: plugin {name} {new} (User Key {action['user_key']})")
+                    else:
+                        try:
+                            out.send(mido.Message("control_change", channel=channel - 1,
+                                                  control=action["user_key_cc"] + action["user_key"] - 1, value=127))
+                            time.sleep(RACK_PAUSE)
+                            print(f"    plugin {name} {new} (User Key {action['user_key']})")
+                        except Exception as e:
+                            print(f"    failed: {e}")
+                            continue
+                    plugin_state[name] = new
+                    continue
                 result = key_result(action) if action["do"] == "key" else None
                 if result and result == last_key and not (args.repeat or action["opts"]["repeat"]):
                     print(f"    skipped: {describe_action(action, channel)} (same as the last key command)")
