@@ -422,6 +422,7 @@ come from, so two sequences never get mixed up on the way to SuperRack.
 |---|---|
 | `--check` | only validate the file and list all mappings, open no ports |
 | `--dry-run` | listen, but only print what would be sent |
+| `--repeat` | always send key commands, also the same one as last time (see below) |
 | `--verbose` | also print messages without a mapping (MIDI clock and active sensing left out) |
 | `--input`, `--port`, `--channel` | override `input`, `output`, `channel` from the file; repeat `--input` for several inputs |
 | `--wing IP` | overrides `host` in the `wing:` section (see the WING section below) |
@@ -446,6 +447,13 @@ missing (e.g. a dropped network MIDI session), the trigger is skipped with a mes
 
 Pressing the same pad again while its action is still running is ignored (the result would be the same, just later).
 Other triggers that arrive meanwhile are executed afterwards, in order.
+
+A key command that is exactly the same as the last one sent (same root, scale, target and Send to All) is skipped:
+it would change nothing, but Tune RT briefly passes through Chromatic, which can be audible. In Chromatic the root
+does not count. The script cannot read Tune RT, so it only knows what it sent itself: if the key was changed elsewhere
+in the meantime (in SuperRack, by a snapshot, by Send to All from another instance), press another key first, or use
+`repeat: true` on the action (or in `defaults`), or start `listen` with `--repeat`. A `cc` or `snapshot` action in
+between, or a `rack` action before a key command without a target, cancels the skip.
 
 `--dry-run` does not need the SuperRack output, so mappings can be tried with just the controller connected.
 

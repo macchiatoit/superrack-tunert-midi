@@ -425,6 +425,7 @@ Eingang, damit sich zwei Folgen auf dem Weg zu SuperRack nie vermischen.
 |---|---|
 | `--check` | nur die Datei prüfen und alle Mappings auflisten, keine Ports öffnen |
 | `--dry-run` | lauschen, aber nur anzeigen, was gesendet würde |
+| `--repeat` | Tonart-Befehle immer senden, auch den gleichen wie zuletzt (siehe unten) |
 | `--verbose` | auch Nachrichten ohne Mapping anzeigen (ohne MIDI-Clock und Active Sensing) |
 | `--input`, `--port`, `--channel` | überschreiben `input`, `output`, `channel` aus der Datei; `--input` mehrfach für mehrere Eingänge |
 | `--wing IP` | überschreibt `host` im Abschnitt `wing:` (siehe Abschnitt zur WING unten) |
@@ -449,6 +450,14 @@ und gemeldet.
 
 Wird dasselbe Pad erneut gedrückt, während seine Aktion noch läuft, wird das ignoriert (das Ergebnis wäre gleich, nur
 später). Andere Trigger, die in der Zwischenzeit kommen, werden danach der Reihe nach ausgeführt.
+
+Ein Tonart-Befehl, der genau dem zuletzt gesendeten entspricht (gleicher Grundton, gleiche Skala, gleiches Ziel und
+Send to All), wird übersprungen: Er würde nichts ändern, aber Tune RT läuft dabei kurz über Chromatic, was hörbar sein
+kann. Bei Chromatic zählt der Grundton nicht. Das Skript kann Tune RT nicht auslesen und kennt nur, was es selbst
+gesendet hat: Wurde die Tonart zwischendurch anders gesetzt (in SuperRack, per Snapshot, per Send to All einer anderen
+Instanz), zuerst eine andere Taste drücken, oder `repeat: true` an der Aktion (bzw. in `defaults`) setzen, oder
+`listen` mit `--repeat` starten. Eine `cc`- oder `snapshot`-Aktion dazwischen, oder eine `rack`-Aktion vor einem
+Tonart-Befehl ohne Ziel, hebt das Überspringen auf.
 
 `--dry-run` braucht den SuperRack-Ausgang nicht, Mappings lassen sich also nur mit angeschlossenem Controller ausprobieren.
 

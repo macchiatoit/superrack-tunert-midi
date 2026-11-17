@@ -519,7 +519,7 @@ def parse_action(raw, defaults, where, anchors=None):
         raise ValueError(f"{where}action must be a mapping, got {raw!r}")
     raw = _normalize_keys(raw)
     if "key" in raw:
-        check_keys(raw, {"key"} | set(KEY_DEFAULTS), where)
+        check_keys(raw, {"key", "repeat"} | set(KEY_DEFAULTS), where)
         if "scale" in raw and "scale_value" in raw:
             raise ValueError(f"{where}use either scale or scale_value, not both")
         opts = {**KEY_DEFAULTS, **defaults}
@@ -536,6 +536,10 @@ def parse_action(raw, defaults, where, anchors=None):
         except ValueError as e:
             raise ValueError(f"{where}{e}") from None
         opts["anchors"] = anchors or {}  # rack: then goes through the nearest anchor, like the rack action
+        # repeat: send even if this is exactly the key command sent last (listen skips that by default)
+        opts["repeat"] = raw.get("repeat", defaults.get("repeat", False))
+        if not isinstance(opts["repeat"], bool):
+            raise ValueError(f"{where}repeat must be true or false, got {opts['repeat']!r}")
         return {"do": "key", "root": raw["key"], "opts": opts}
     if "rack" in raw:
         # Select a rack on its own (in a key action, rack: selects the rack of the Tune RT to set instead).
@@ -582,7 +586,7 @@ def load_mapping(path):
         if not isinstance(raw_defaults, dict):
             raise ValueError(f"defaults must be a mapping like {{hot_plugin: 1}}, got {raw_defaults!r}")
         defaults = _normalize_keys(raw_defaults)
-        check_keys(defaults, KEY_DEFAULTS, "", " in defaults")
+        check_keys(defaults, {"repeat"} | set(KEY_DEFAULTS), "", " in defaults")
         if "scale" in defaults and "scale_value" in defaults:
             raise ValueError("defaults: use either scale or scale_value, not both")
         channel = check_int(data.get("channel", 1), 1, 16, "channel")
@@ -640,6 +644,14 @@ def load_mapping(path):
         sys.exit(f"{path}: no mappings defined")
     return {"inputs": inputs and [n.strip() for n in inputs], "output": output, "channel": channel,
             "mappings": mappings, "wing": wing, "anchors": anchors}
+
+
+def key_result(action):
+    """What a key action leaves behind in Tune RT. Two key actions with the same result do the same thing."""
+    o = action["opts"]
+    root, scale_value, _ = resolve_key(action["root"], o)
+    return (None if scale_value == SCALE_CHROMATIC else root, scale_value, o["rack"], o["hot_plugin"], o["user_key"],
+            o["send_to_all"])
 
 
 def describe_action(action, channel):
@@ -1177,6 +1189,11 @@ def cmd_listen(args):
     # With several inputs, say which one a message came from.
     origin = (lambda port: f"  [{port}]") if len(sources) > 1 else (lambda port: "")
     last_match, busy_until = None, 0.0
+    # The key command sent last. The same one again is skipped: it would change nothing, but Tune RT briefly passes
+    # through Chromatic, which can be audible. The script cannot read Tune RT, so a change made elsewhere (in SuperRack,
+    # by a snapshot, by Send to All from another instance) goes unnoticed; pressing another key first, or repeat: true,
+    # sends it anyway.
+    last_key = None
     messages = queue.Queue()
     with stop_requested() as stop, output as out:
         selects = [m["trigger"] for m in mapping["mappings"] if m["trigger"]["type"] == "channel_select"]
@@ -1209,13 +1226,25 @@ def cmd_listen(args):
                 if stop.is_set():
                     print("    stop requested, remaining actions skipped")
                     break
+                result = key_result(action) if action["do"] == "key" else None
+                if result and result == last_key and not (args.repeat or action["opts"]["repeat"]):
+                    print(f"    skipped: {describe_action(action, channel)} (same as the last key command)")
+                    continue
                 if args.dry_run:
                     print(f"    would do: {describe_action(action, channel)}")
-                    continue
-                try:
-                    print(f"    {run_action(out, action, channel, stop)}")
-                except Exception as e:  # keep listening even if one action fails
-                    print(f"    failed: {e}")
+                else:
+                    try:
+                        print(f"    {run_action(out, action, channel, stop)}")
+                    except Exception as e:  # keep listening even if one action fails
+                        print(f"    failed: {e}")
+                        last_key = None  # unknown what got through
+                        continue
+                if result:
+                    last_key = result
+                elif action["do"] in ("cc", "snapshot"):
+                    last_key = None  # may have changed Tune RT
+                elif action["do"] == "rack" and last_key and last_key[2:5] == (None, None, None):
+                    last_key = None  # the last key went to the selected plugin, which may be another one now
             last_match, busy_until = match, time.monotonic()
         if follower:
             follower.join(timeout=2)
@@ -1400,6 +1429,8 @@ def main():
     s.add_argument("--dry-run", action="store_true", help="show what would be sent, send nothing")
     s.add_argument("--verbose", "-v", action="store_true", help="also print messages without a mapping")
     s.add_argument("--wing", metavar="IP", help="IP address of the WING (overrides 'host' in the 'wing:' section)")
+    s.add_argument("--repeat", action="store_true",
+                   help="always send key commands, even the same one as last time (default: skip it)")
     s.set_defaults(func=cmd_listen)
 
     s = sub.add_parser("monitor", help="print incoming MIDI messages in trigger format")
